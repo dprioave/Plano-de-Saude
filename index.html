@@ -291,7 +291,7 @@ let state = {
   modulos: { saude:{faturas:{}}, odonto:{faturas:{}} },
   nomeResolucoes: {},
   empresaIgnoradas: {},
-  subfaturasPorCodigo: {},
+  subfaturasPorCodigo: {saude:{}, odonto:{}},
   centroCustoMapa: {},
   db: null,
 };
@@ -497,18 +497,11 @@ function normEmpresaCod(x){
   return isNaN(n) ? null : String(n);
 }
 // Mapa oficial "código da empresa (Alterdata) -> subfatura da Bradesco" — muito mais confiável
-// que comparar nomes de empresa por semelhança de texto (ver empresasEquivalentes()).
-async function importarSubfaturas(file){
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, {type:"array", cellDates:false});
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:""});
-  if(!rows.length) throw new Error("Planilha vazia.");
-  const header = rows[0].map(String);
-  const cCod = findCol(header, ["Código","Codigo"]);
-  const cNome = findCol(header, ["Nome"]);
-  const cSub = findCol(header, ["SUBFATURA","Subfatura"]);
-  if(cCod<0 || cSub<0) throw new Error("Não encontrei as colunas 'Código' e 'SUBFATURA' na planilha.");
+// que comparar nomes de empresa por semelhança de texto (ver empresasEquivalentes()). Saúde e
+// Odonto são apólices separadas na Bradesco com numeração de subfatura própria (confirmado pelo
+// usuário: mesma empresa pode ter código diferente em cada módulo, ex. Rio Ave Investimentos é
+// 0004 na Saúde e 0002 no Odonto) — por isso o mapa é por módulo, uma coluna de planilha pra cada.
+function parseSubfaturaCol(rows, cCod, cNome, cSub){
   const mapa = {};
   let n = 0;
   for(let i=1;i<rows.length;i++){
@@ -521,8 +514,27 @@ async function importarSubfaturas(file){
     mapa[cod] = {codigoSubfatura: m[1], nomeSubfatura: m[2].trim(), empresaNome: cNome>=0 ? String(r[cNome]||"").trim() : ""};
     n++;
   }
+  return {mapa, n};
+}
+async function importarSubfaturas(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:"array", cellDates:false});
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:""});
+  if(!rows.length) throw new Error("Planilha vazia.");
+  const header = rows[0].map(String);
+  const cCod = findCol(header, ["Código","Codigo"]);
+  const cNome = findCol(header, ["Nome"]);
+  const cSubSaude = findCol(header, ["SUBFATURA SAÚDE","SUBFATURA SAUDE"]);
+  const cSubOdonto = findCol(header, ["SUBFATURA ODONTO"]);
+  const cSubUnica = findCol(header, ["SUBFATURA","Subfatura"]); // planilha antiga, uma coluna só (aplica pros dois módulos)
+  if(cCod<0) throw new Error("Não encontrei a coluna 'Código' na planilha.");
+  if(cSubSaude<0 && cSubOdonto<0 && cSubUnica<0) throw new Error("Não encontrei nenhuma coluna de SUBFATURA na planilha.");
+  const saude = cSubSaude>=0 ? parseSubfaturaCol(rows, cCod, cNome, cSubSaude) : (cSubUnica>=0 ? parseSubfaturaCol(rows, cCod, cNome, cSubUnica) : {mapa:{}, n:0});
+  const odonto = cSubOdonto>=0 ? parseSubfaturaCol(rows, cCod, cNome, cSubOdonto) : (cSubUnica>=0 ? parseSubfaturaCol(rows, cCod, cNome, cSubUnica) : {mapa:{}, n:0});
+  const n = saude.n + odonto.n;
   if(!n) throw new Error("Nenhuma linha com código + subfatura reconhecida.");
-  state.subfaturasPorCodigo = mapa;
+  state.subfaturasPorCodigo = {saude: saude.mapa, odonto: odonto.mapa};
   state.subfaturasArquivo = file.name;
   state.subfaturasImportadoEm = new Date().toISOString();
   persistSubfaturas();
@@ -982,8 +994,9 @@ function titularesDaFatura(fatura){
   }
   return [...seen.values()];
 }
-function analisarTitulares(fatura){
+function analisarTitulares(fatura, modulo){
   const ativosMap = ativosPorNome(fatura.competencia);
+  const subfaturasModulo = (state.subfaturasPorCodigo && state.subfaturasPorCodigo[modulo]) || {};
   const desligados = [];
   const pendentes = [];
   const divergenciasEmpresa = [];
@@ -1008,14 +1021,18 @@ function analisarTitulares(fatura){
     // Prioriza o mapa oficial código->subfatura (importarSubfaturas) quando disponível — muito mais
     // confiável que comparar nomes por semelhança de texto, que sofre com truncamentos tipo "LTD" x "LTDA".
     let divergente = false;
-    const mapaSub = ativo ? state.subfaturasPorCodigo[normEmpresaCod(ativo.empresaCod)] : null;
+    const mapaSub = ativo ? subfaturasModulo[normEmpresaCod(ativo.empresaCod)] : null;
     if(ativo && t.empresaCodigo && mapaSub){
       divergente = t.empresaCodigo !== mapaSub.codigoSubfatura;
     } else if(ativo && t.empresa && ativo.empresaNome){
       divergente = !empresasEquivalentes(t.empresa, ativo.empresaNome);
     }
     if(divergente && !state.empresaIgnoradas[t.nomeNorm]){
-      divergenciasEmpresa.push({titular: t, ativo, empresaEsperada: mapaSub ? `${mapaSub.codigoSubfatura} - ${mapaSub.nomeSubfatura}` : ativo.empresaNome});
+      // Mostra o nome completo da empresa (coluna "Nome" do SUBFATURAS.xlsx), não o nome curto que a
+      // Bradesco imprime na subfatura — ex. "CONDOMINIO DO EDIFICIO EMPRESARIAL" (subfatura) é a
+      // mesma empresa que "CONDOMINIO DO EDIFICIO EMPRESARIAL MARIE CURIE" (nome real), mas o nome
+      // curto sozinho parece uma empresa diferente pra quem está lendo a divergência.
+      divergenciasEmpresa.push({titular: t, ativo, empresaEsperada: mapaSub ? `${mapaSub.codigoSubfatura} - ${mapaSub.empresaNome || mapaSub.nomeSubfatura}` : ativo.empresaNome});
     }
   }
   return {desligados, pendentes, divergenciasEmpresa};
@@ -1024,8 +1041,8 @@ function marcarDivergenciaEmpresaCiente(nomeNorm){
   state.empresaIgnoradas[nomeNorm] = {ignoradoEm: new Date().toISOString()};
   persistResolucoes();
 }
-function desligadosNoPlano(fatura){
-  return analisarTitulares(fatura).desligados;
+function desligadosNoPlano(fatura, modulo){
+  return analisarTitulares(fatura, modulo).desligados;
 }
 function resolverNome(nomeNorm, status, ativoNomeSugerido){
   state.nomeResolucoes[nomeNorm] = {status, ativoNome: ativoNomeSugerido||null, resolvidoEm: new Date().toISOString()};
@@ -1148,11 +1165,14 @@ function centroCustoDivergenciaSubholding(empresaFatura, ativo){
   if(empresasEquivalentes(ativo.empresaNome, "RIO AVE SUBHOLDING INCORPORACAO LTD")) return null;
   return CENTRO_CUSTO_REEMBOLSOS_SUBHOLDING;
 }
-// Estas 4 empresas são pagas juntas num boleto só (mesmo arquivo/apólice — ver nota do IOF) — pedido
-// explícito do usuário: tratar como UMA fatura só no filtro de empresa e na conferência com o
-// boleto, não 4 empresas separadas. Sem isso, filtrar pra ver só "RIO AVE SUBHOLDING" sozinha
-// comparava um subconjunto de gente contra o boleto do grupo inteiro, gerando uma "diferença" que
-// não existe de verdade (a real é a soma de todos os 4 juntos).
+// Estas 4 empresas são pagas juntas num boleto só na SAÚDE (mesmo arquivo/apólice — ver nota do
+// IOF) — pedido explícito do usuário: tratar como UMA fatura só no filtro de empresa e na
+// conferência com o boleto, não 4 empresas separadas. Sem isso, filtrar pra ver só "RIO AVE
+// SUBHOLDING" sozinha comparava um subconjunto de gente contra o boleto do grupo inteiro, gerando
+// uma "diferença" que não existe de verdade (a real é a soma de todos os 4 juntos).
+// NO ODONTO ISSO NÃO VALE (confirmado pelo usuário, planilha SUBFATURAS.xlsx): o MSB tem subfatura
+// própria e separada (código 0004), e FCS/William Palacio simplesmente não têm fatura de Odonto —
+// por isso o agrupamento só se aplica ao módulo "saude", nunca ao "odonto".
 const GRUPO_FATURAMENTO_SUBHOLDING = [
   "RIO AVE SUBHOLDING INCORPORACAO LTD",
   "FCS ENGENHARIA LTDA",
@@ -1160,8 +1180,8 @@ const GRUPO_FATURAMENTO_SUBHOLDING = [
   "WILLIAM PALACIO FERREIRA LTDA",
 ];
 const GRUPO_FATURAMENTO_LABEL = "RIO AVE SUBHOLDING INCORPORACAO LTD (+ FCS Engenharia, MSB Consultoria, William Palacio Ferreira)";
-function empresaOuGrupo(empresa){
-  if(!empresa) return empresa;
+function empresaOuGrupo(empresa, modulo){
+  if(!empresa || modulo === "odonto") return empresa;
   for(const nome of GRUPO_FATURAMENTO_SUBHOLDING){
     if(empresasEquivalentes(empresa, nome)) return GRUPO_FATURAMENTO_LABEL;
   }
@@ -1291,10 +1311,10 @@ function coparticipacaoDoMes(modulo, competenciaAlvo){
   // ordem fixa por nome — não reordena quando o valor muda (evita a linha "sumir" de vista ao editar parcelas)
   return [...linhas.values()].sort((a,b)=> a.beneficiario.nome.localeCompare(b.beneficiario.nome, "pt-BR"));
 }
-function empresasNaFatura(fatura){
+function empresasNaFatura(fatura, modulo){
   const set = new Set();
-  for(const b of (fatura.beneficiarios||[])) if(b.empresa) set.add(empresaOuGrupo(b.empresa));
-  for(const b of (fatura.historicoBeneficiarios||[])) if(b.empresa) set.add(empresaOuGrupo(b.empresa));
+  for(const b of (fatura.beneficiarios||[])) if(b.empresa) set.add(empresaOuGrupo(b.empresa, modulo));
+  for(const b of (fatura.historicoBeneficiarios||[])) if(b.empresa) set.add(empresaOuGrupo(b.empresa, modulo));
   return [...set].sort();
 }
 function historicoBeneficiario(modulo, nomeNorm){
@@ -1448,7 +1468,7 @@ function renderNav(){
   ];
   nav.innerHTML = items.map(it=>{
     const fa = it.id!=="ativos" ? faturaAtual(it.id) : null;
-    const an = fa ? analisarTitulares(fa) : null;
+    const an = fa ? analisarTitulares(fa, it.id) : null;
     const pendentes = an ? an.desligados.length + an.pendentes.length + an.divergenciasEmpresa.length : 0;
     return `<button data-v="${it.id}" class="${activeView===it.id?'active':''}">${it.icon}<span>${it.label}</span>${pendentes?`<span class="dot">${pendentes}</span>`:''}</button>`;
   }).join("");
@@ -1517,18 +1537,25 @@ function renderAtivos(){
   `;
 }
 function renderSubfaturasPanel(){
-  const entradas = Object.entries(state.subfaturasPorCodigo);
+  const mapaSaude = (state.subfaturasPorCodigo && state.subfaturasPorCodigo.saude) || {};
+  const mapaOdonto = (state.subfaturasPorCodigo && state.subfaturasPorCodigo.odonto) || {};
+  const codigos = [...new Set([...Object.keys(mapaSaude), ...Object.keys(mapaOdonto)])].sort();
+  const total = codigos.length;
   return `
   <div class="panel">
     <div class="panel-head">
-      <div class="ph-text"><h3>Mapa de subfaturas</h3><p>Liga o código da empresa (Alterdata) ao número/nome da subfatura na Bradesco — usado para detectar "empresa divergente" com precisão, em vez de comparar nomes por semelhança.</p></div>
-      <label class="btn ghost" for="fileSubfaturas" style="white-space:nowrap">${ICONS.upload}${entradas.length?"Atualizar mapa":"Importar mapa"}</label>
+      <div class="ph-text"><h3>Mapa de subfaturas</h3><p>Liga o código da empresa (Alterdata) ao número/nome da subfatura na Bradesco, por módulo (Saúde e Odonto têm numeração própria) — usado para detectar "empresa divergente" com precisão, em vez de comparar nomes por semelhança.</p></div>
+      <label class="btn ghost" for="fileSubfaturas" style="white-space:nowrap">${ICONS.upload}${total?"Atualizar mapa":"Importar mapa"}</label>
       <input type="file" id="fileSubfaturas" accept=".xls,.xlsx">
     </div>
-    ${entradas.length ? `
-    <p class="phint" style="margin-bottom:12px">${entradas.length} empresas mapeadas · ${state.subfaturasArquivo||""} · ${state.subfaturasImportadoEm ? new Date(state.subfaturasImportadoEm).toLocaleDateString("pt-BR") : ""}</p>
-    <div class="twrap"><table><thead><tr><th>Código</th><th>Empresa</th><th>Subfatura</th></tr></thead><tbody>
-      ${entradas.map(([cod,s])=>`<tr><td class="tabular muted">${cod}</td><td>${s.empresaNome||"—"}</td><td class="tabular">${s.codigoSubfatura} - ${s.nomeSubfatura}</td></tr>`).join("")}
+    ${total ? `
+    <p class="phint" style="margin-bottom:12px">${total} empresas mapeadas · ${state.subfaturasArquivo||""} · ${state.subfaturasImportadoEm ? new Date(state.subfaturasImportadoEm).toLocaleDateString("pt-BR") : ""}</p>
+    <div class="twrap"><table><thead><tr><th>Código</th><th>Empresa</th><th>Subfatura Saúde</th><th>Subfatura Odonto</th></tr></thead><tbody>
+      ${codigos.map(cod=>{
+        const s = mapaSaude[cod], o = mapaOdonto[cod];
+        const nome = (s&&s.empresaNome) || (o&&o.empresaNome) || "—";
+        return `<tr><td class="tabular muted">${cod}</td><td>${nome}</td><td class="tabular">${s?`${s.codigoSubfatura} - ${s.nomeSubfatura}`:"—"}</td><td class="tabular">${o?`${o.codigoSubfatura} - ${o.nomeSubfatura}`:"—"}</td></tr>`;
+      }).join("")}
     </tbody></table></div>
     ` : `<div class="empty">Nenhum mapa importado ainda — a checagem de empresa divergente usa comparação por nome (menos precisa) até isso ser importado.</div>`}
   </div>`;
@@ -1702,7 +1729,7 @@ function renderModulo(modulo){
     `;
   }
 
-  const analise = analisarTitulares(fatura);
+  const analise = analisarTitulares(fatura, modulo);
   const desl = analise.desligados;
   const pendentes = analise.pendentes;
   const divEmpresa = analise.divergenciasEmpresa;
@@ -1710,9 +1737,9 @@ function renderModulo(modulo){
   const copart = isHealth ? coparticipacaoDoMes(modulo, sel) : [];
   const valorLiquidoMap = valorLiquidoPorCertificado(fatura);
 
-  const empresasDisp = empresasNaFatura(fatura);
+  const empresasDisp = empresasNaFatura(fatura, modulo);
   const filtro = state["_filtroEmpresa_"+modulo] || "";
-  const passaFiltro = empresa => !filtro || empresaOuGrupo(empresa) === filtro;
+  const passaFiltro = empresa => !filtro || empresaOuGrupo(empresa, modulo) === filtro;
   const deslF = desl.filter(d=>passaFiltro(d.empresa));
   const pendentesF = pendentes.filter(p=>passaFiltro(p.titular.empresa));
   const divEmpresaF = divEmpresa.filter(d=>passaFiltro(d.titular.empresa));
@@ -1721,6 +1748,9 @@ function renderModulo(modulo){
   const beneficiariosF = fatura.beneficiarios.filter(b=>!b.ajusteOnly && passaFiltro(b.empresa));
   const totalCopart = copartF.reduce((s,r)=>s+r.totalDescontar,0);
   const totalEventosF = fatura.eventos.filter(e=>passaFiltro(e.empresa)).length;
+  // Valor líquido (não a coluna "Valor" crua) — já desconta estornos/cancelamentos retroativos
+  // (CM/CR), mesma lógica já usada na tabela de desligados e no rateio por centro de custo.
+  const totalMensalidade = beneficiariosF.reduce((s,b)=> s + (valorLiquidoMap.get((b.empresa||"")+"|"+b.certificado) ?? (b.valor||0)), 0);
 
   return `
   ${renderCompTabs(modulo, todasComps, sel)}
@@ -1742,6 +1772,7 @@ function renderModulo(modulo){
     <div class="tile ${pendentesF.length?'warn':''}"><div class="tlabel">Nomes a confirmar</div><div class="tval tabular">${pendentesF.length}</div><div class="tsub">grafia parecida no cadastro</div></div>
     <div class="tile ${divEmpresaF.length?'warn':''}"><div class="tlabel">Empresa divergente</div><div class="tval tabular">${divEmpresaF.length}</div><div class="tsub">fatura ≠ cadastro</div></div>
     <div class="tile ${deslF.length?'danger':'ok'}"><div class="tlabel">Desligados ainda no plano</div><div class="tval tabular">${deslF.length}</div></div>
+    <div class="tile"><div class="tlabel">Valor da mensalidade</div><div class="tval tabular">${fmtBRL(totalMensalidade)}</div><div class="tsub">${beneficiariosF.length} beneficiário(s), líquido de estornos</div></div>
     ${isHealth ? `<div class="tile warn"><div class="tlabel">Coparticipação do mês</div><div class="tval tabular">${fmtBRL(totalCopart)}</div><div class="tsub">${totalEventosF} evento(s)</div></div>` : ""}
   </div>
 
@@ -1916,7 +1947,7 @@ function montarSheetBeneficiarios(wb, modulo, competencia, sheetName, centrosDis
   const label = modulo === "saude" ? "Saúde" : "Odonto";
   const filtro = state["_filtroEmpresa_"+modulo] || "";
   const linhas = rateioBeneficiarios(modulo, competencia)
-    .filter(l => !filtro || empresaOuGrupo(l.beneficiario.empresa) === filtro)
+    .filter(l => !filtro || empresaOuGrupo(l.beneficiario.empresa, modulo) === filtro)
     .sort((a,b)=>{
       // ordem alfabética pelo TITULAR (não pelo nome da própria linha), com o titular sempre antes
       // dos seus dependentes dentro do mesmo grupo — pedido explícito do usuário.
@@ -2471,7 +2502,12 @@ function subscribeDb(db){
         state.nomeResolucoes = data.nomeResolucoes||{};
         state.empresaIgnoradas = data.empresaIgnoradas||{};
       } else if(d.id==="subfaturas"){
-        state.subfaturasPorCodigo = data.subfaturasPorCodigo||{};
+        // Formato antigo (antes do mapa virar por módulo) salvava um objeto plano código->subfatura,
+        // sempre referente à Saúde — se ainda vier assim (dado migrado do localStorage antes desta
+        // mudança), embrulha como {saude:..., odonto:{}} em vez de perder o que já foi importado.
+        const sub = data.subfaturasPorCodigo || {};
+        const formatoAntigo = Object.keys(sub).length && !("saude" in sub) && !("odonto" in sub);
+        state.subfaturasPorCodigo = formatoAntigo ? {saude: sub, odonto: {}} : {saude: sub.saude||{}, odonto: sub.odonto||{}};
         state.subfaturasArquivo = data.subfaturasArquivo||null;
         state.subfaturasImportadoEm = data.subfaturasImportadoEm||null;
       } else if(d.id==="centroCusto"){
