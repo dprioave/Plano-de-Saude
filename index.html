@@ -1,0 +1,2610 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gestão de Plano de Saúde</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<!-- Banco compartilhado (Firestore) — mesmo padrão do Apontamento Diário -->
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.13.2/firebase-app-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.13.2/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --bg:#10141A;
+  --panel:rgba(255,255,255,0.045);
+  --panel-border:rgba(255,255,255,0.09);
+  --panel-hi:rgba(255,255,255,0.07);
+  --text:#EAEDF1;
+  --text-dim:#9CA6B4;
+  --text-faint:#6B7480;
+  --line:rgba(255,255,255,0.08);
+  --saude:#4E9F6B;
+  --saude-soft:rgba(78,159,107,0.15);
+  --odonto:#5CA9D6;
+  --odonto-soft:rgba(92,169,214,0.15);
+  --accent:var(--saude);
+  --accent-soft:var(--saude-soft);
+  --warn:#E0A63E;
+  --warn-soft:rgba(224,166,62,0.15);
+  --danger:#E2584F;
+  --danger-soft:rgba(226,88,79,0.15);
+  --ok:#4E9F6B;
+  --radius:14px;
+  --sans:'IBM Plex Sans',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  padding-inline:0;
+  background-color:var(--bg);
+  background-image:linear-gradient(rgba(8,11,16,.72),rgba(8,11,16,.84)), url("bg-pattern.jpg");
+  background-size:cover;
+  background-position:center;
+  background-attachment:fixed;
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:14px;
+  -webkit-font-smoothing:antialiased;
+}
+img{max-width:100%}
+[hidden]{display:none!important}
+::selection{background:var(--accent-soft)}
+.tabular{font-variant-numeric:tabular-nums}
+
+/* ---- shell ---- */
+.shell{display:flex;min-height:100%}
+.side{
+  width:216px;flex:0 0 216px;
+  background:linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015) 40%),rgba(10,13,18,0.55);
+  backdrop-filter:blur(14px);
+  border-right:1px solid var(--line);
+  padding:22px 16px;
+  display:flex;flex-direction:column;gap:22px;
+  position:sticky;top:0;height:100vh;overflow-y:auto;
+}
+.brand{display:flex;flex-direction:column;gap:8px;padding:0 4px}
+.brand img.logo{height:26px;width:auto;max-width:none;align-self:flex-start;display:block;object-fit:contain}
+.brand .mark{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--text-faint);text-transform:uppercase}
+.brand h1{font-size:16px;margin:2px 0 0;font-weight:600;line-height:1.25}
+.nav{display:flex;flex-direction:column;gap:4px}
+.nav button{
+  all:unset;cursor:pointer;
+  display:flex;align-items:center;gap:10px;
+  padding:9px 10px;border-radius:10px;
+  color:var(--text-dim);font-size:13.5px;font-weight:500;
+  transition:background .12s,color .12s;
+}
+.nav button svg{width:16px;height:16px;flex:0 0 16px;opacity:.85}
+.nav button:hover{background:var(--panel-hi);color:var(--text)}
+.nav button.active{background:var(--accent-soft);color:var(--text)}
+.nav button.active svg{color:var(--accent)}
+.nav .dot{
+  margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;
+  background:var(--danger-soft);color:var(--danger);font-family:var(--mono);
+  font-size:10.5px;display:flex;align-items:center;justify-content:center;font-weight:600;
+}
+.side-foot{margin-top:auto;padding:0 4px;color:var(--text-faint);font-size:11px;line-height:1.5}
+
+.main{flex:1;min-width:0;padding:28px 34px 60px}
+.view{max-width:1180px;margin:0 auto}
+.view-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.view-head h2{font-size:22px;margin:0 0 4px;font-weight:600;letter-spacing:-.01em}
+.view-head p{margin:0;color:var(--text-dim);font-size:13px;max-width:56ch}
+.head-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---- buttons ---- */
+.btn{
+  all:unset;cursor:pointer;box-sizing:border-box;
+  display:inline-flex;align-items:center;gap:7px;
+  padding:9px 14px;border-radius:10px;font-size:13px;font-weight:600;
+  background:var(--panel);border:1px solid var(--panel-border);color:var(--text);
+  transition:background .12s,border-color .12s;
+}
+.btn:hover{background:var(--panel-hi)}
+.btn.primary{background:var(--accent);border-color:transparent;color:#0A0E12}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--text-dim)}
+.btn.ghost:hover{color:var(--text);background:var(--panel-hi)}
+button.btn:disabled{opacity:.5;cursor:default;pointer-events:none}
+.btn svg{width:14px;height:14px;flex:0 0 14px}
+input[type=file]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+select,input[type=text],input[type=month],input[type=number]{
+  background:var(--panel);border:1px solid var(--panel-border);color:var(--text);
+  border-radius:9px;padding:8px 11px;font-family:var(--sans);font-size:13px;
+}
+
+/* ---- cards / tiles ---- */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:22px}
+.tile{
+  background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius);
+  padding:16px 16px 14px;backdrop-filter:blur(10px);
+}
+.tile .tlabel{font-size:11.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.tile .tval{font-family:var(--mono);font-size:26px;font-weight:600;line-height:1}
+.tile .tsub{margin-top:6px;font-size:12px;color:var(--text-faint)}
+.tile.warn .tval{color:var(--warn)}
+.tile.danger .tval{color:var(--danger)}
+.tile.ok .tval{color:var(--ok)}
+
+.panel{
+  background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius);
+  padding:18px 20px;margin-bottom:18px;backdrop-filter:blur(10px);
+}
+.panel h3{margin:0 0 3px;font-size:14.5px;font-weight:600}
+.panel .phint{margin:0 0 14px;color:var(--text-dim);font-size:12.5px}
+.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.panel-head .ph-text h3{margin-bottom:3px}
+.panel-head .ph-text p{margin:0;color:var(--text-dim);font-size:12.5px}
+
+/* ---- tables ---- */
+.twrap{overflow-x:auto;border-radius:10px;border:1px solid var(--line)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{
+  text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--text-faint);font-weight:600;padding:9px 12px;
+  background:rgba(255,255,255,0.03);border-bottom:1px solid var(--line);white-space:nowrap;
+}
+tbody td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:nth-child(even){background:rgba(255,255,255,0.015)}
+.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+.muted{color:var(--text-faint)}
+.empty{padding:30px 12px;text-align:center;color:var(--text-faint);font-size:13px}
+
+.pill{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:100px;
+  font-size:11.5px;font-weight:600;white-space:nowrap;
+}
+.pill.titular{background:var(--accent-soft);color:var(--accent)}
+.pill.dep{background:var(--panel-hi);color:var(--text-dim)}
+.pill.danger{background:var(--danger-soft);color:var(--danger)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.ok{background:rgba(78,159,107,.15);color:var(--ok)}
+
+.uploader{
+  border:1.5px dashed var(--panel-border);border-radius:12px;padding:22px;
+  display:flex;align-items:center;gap:14px;cursor:pointer;transition:border-color .12s,background .12s;
+}
+.uploader:hover{border-color:var(--accent);background:var(--accent-soft)}
+.uploader .uicon{
+  width:38px;height:38px;border-radius:10px;background:var(--accent-soft);color:var(--accent);
+  display:flex;align-items:center;justify-content:center;flex:0 0 38px;
+}
+.uploader .ux strong{display:block;font-size:13.5px;margin-bottom:2px}
+.uploader .ux span{font-size:12px;color:var(--text-dim)}
+.uploader input{display:none}
+
+.comp-tabs{display:flex;gap:6px;margin-bottom:20px;overflow-x:auto;padding-bottom:2px}
+.comp-tab{
+  all:unset;cursor:pointer;padding:7px 15px;border-radius:9px;font-size:12.5px;font-weight:600;
+  color:var(--text-dim);background:var(--panel);border:1px solid var(--panel-border);white-space:nowrap;
+  transition:background .12s,color .12s;
+}
+.comp-tab:hover{background:var(--panel-hi);color:var(--text)}
+.comp-tab.active{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.comp-tab.projetado{border-style:dashed;color:var(--text-faint)}
+.comp-tab.projetado.active{border-style:dashed;border-color:var(--accent)}
+
+.badge-mod{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);font-weight:600}
+.badge-mod .sw{width:8px;height:8px;border-radius:2px}
+
+.modal-bg{position:fixed;inset:0;background:rgba(6,8,11,0.6);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+.modal{
+  background:#151A21;border:1px solid var(--panel-border);border-radius:16px;
+  width:100%;max-width:640px;max-height:86vh;overflow:auto;padding:22px 24px 24px;
+}
+.modal h3{margin:0 0 4px;font-size:16px}
+.modal .mhint{margin:0 0 16px;color:var(--text-dim);font-size:12.5px}
+.modal-close{float:right;cursor:pointer;color:var(--text-faint);font-size:20px;line-height:1}
+.modal-close:hover{color:var(--text)}
+
+.hist-bars{display:flex;align-items:flex-end;gap:6px;height:90px;margin:14px 0 6px}
+.hist-bars .hb{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px}
+.hist-bars .hb .bar{width:100%;border-radius:4px 4px 0 0;background:var(--accent);min-height:2px}
+.hist-bars .hb .hblabel{font-size:10px;color:var(--text-faint);font-family:var(--mono)}
+
+.toast{
+  position:fixed;bottom:20px;right:20px;background:#1B2129;border:1px solid var(--panel-border);
+  border-radius:10px;padding:11px 16px;font-size:13px;color:var(--text);box-shadow:0 8px 24px rgba(0,0,0,.4);
+  display:flex;align-items:center;gap:8px;z-index:60;max-width:340px;
+}
+.toast.err{border-color:rgba(226,88,79,.4)}
+
+.db-banner{ background:var(--warn-soft); color:var(--warn); border:1px solid rgba(224,166,62,.3); border-radius:9px; padding:10px 14px; font-size:12.5px; margin-bottom:18px; }
+
+.empty-state{
+  text-align:center;padding:52px 20px;color:var(--text-dim);
+}
+.empty-state .es-icon{
+  width:52px;height:52px;border-radius:14px;background:var(--panel-hi);margin:0 auto 16px;
+  display:flex;align-items:center;justify-content:center;color:var(--text-faint);
+}
+.empty-state h4{margin:0 0 6px;color:var(--text);font-size:15px}
+.empty-state p{margin:0 0 18px;font-size:12.5px;max-width:38ch;margin-inline:auto}
+
+@media(max-width:860px){
+  .shell{flex-direction:column}
+  .side{position:relative;width:100%;flex:none;height:auto;flex-direction:row;align-items:center;padding:14px 16px;overflow-x:auto}
+  .brand{display:none}
+  .nav{flex-direction:row}
+  .side-foot{display:none}
+  .main{padding:20px 16px 40px}
+}
+</style>
+</head>
+<body>
+<div class="modal-bg" id="authGate">
+  <div class="modal" style="max-width:380px">
+    <h3>Plano de Saúde — acesso restrito</h3>
+    <p class="mhint">Este painel tem dados sensíveis de plano de saúde. Digite a senha para continuar.</p>
+    <div style="margin:16px 0 6px">
+      <input type="password" id="authInput" style="width:100%" placeholder="Senha" autocomplete="off">
+    </div>
+    <div id="authError" style="color:var(--danger);font-size:12px;margin-bottom:6px;display:none">Senha incorreta.</div>
+    <button class="btn primary" id="authSubmit" style="width:100%;justify-content:center;margin-top:10px">Entrar</button>
+  </div>
+</div>
+<div class="shell" id="appShell" style="display:none">
+  <aside class="side">
+    <div class="brand">
+      <img class="logo" src="logo-rioave.png" alt="Rio Ave">
+      <span class="mark">DP · Benefícios</span>
+      <h1>Plano de Saúde</h1>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot">Dados compartilhados entre quem tem acesso a este painel (banco Firestore dedicado). Nada é enviado a outro sistema além dele.</div>
+  </aside>
+  <main class="main">
+    <div id="dbBanner" class="db-banner" hidden></div>
+    <div class="view" id="view"></div>
+  </main>
+</div>
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+/* ============================================================
+   ESTADO / PERSISTÊNCIA
+   Banco compartilhado (Firestore) — ver seção "BANCO DE DADOS"
+   mais abaixo. `state.*` é só o cache em memória alimentado pelas
+   assinaturas (onSnapshot); quem grava de fato são as funções
+   persistAtivos/persistFatura/persistResolucoes/etc, cada uma no
+   documento certo, chamadas no lugar do antigo saveState() único.
+============================================================ */
+const LEGACY_STORE_KEY = "planoSaudeRioAve:v1";
+function loadLegacyLocalState(){
+  try{
+    const raw = localStorage.getItem(LEGACY_STORE_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return null;
+}
+let state = {
+  ativosPorCompetencia: {},
+  modulos: { saude:{faturas:{}}, odonto:{faturas:{}} },
+  nomeResolucoes: {},
+  empresaIgnoradas: {},
+  subfaturasPorCodigo: {},
+  centroCustoMapa: {},
+  db: null,
+};
+
+/* ============================================================
+   UTILITÁRIOS
+============================================================ */
+function normName(s){
+  return (s||"").toString().normalize("NFD").replace(/[̀-ͯ]/g,"").toUpperCase().replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
+}
+function parseNumBR(raw){
+  if(raw==null) return 0;
+  let s = raw.toString().trim();
+  let neg = false;
+  if(s.endsWith("-")){ neg = true; s = s.slice(0,-1); }
+  if(s.startsWith("-")){ neg = true; s = s.slice(1); }
+  s = s.replace(/\./g,"").replace(",", ".");
+  const n = parseFloat(s);
+  if(isNaN(n)) return 0;
+  return neg ? -n : n;
+}
+function fmtBRL(n){
+  return (n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+}
+function parseDateBR(s){
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((s||"").trim());
+  if(!m) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+function fmtDateISO(iso){
+  if(!iso) return "—";
+  const [y,m,d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+/* ---- Similaridade de nomes (fatura x cadastro grafados diferente) ---- */
+const CONECTORES_NOME = new Set(["DE","DA","DO","DAS","DOS","E"]);
+function tokensSignificativos(nomeNorm){
+  return nomeNorm.split(" ").filter(t=>t && !CONECTORES_NOME.has(t));
+}
+function levenshtein(a, b){
+  const m=a.length, n=b.length;
+  if(m===0) return n; if(n===0) return m;
+  let prev = new Array(n+1);
+  for(let j=0;j<=n;j++) prev[j]=j;
+  for(let i=1;i<=m;i++){
+    const cur = [i];
+    for(let j=1;j<=n;j++){
+      const cost = a[i-1]===b[j-1] ? 0 : 1;
+      cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost);
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+function similaridadeTexto(a, b){
+  if(!a || !b) return 0;
+  const dist = levenshtein(a, b);
+  const maxLen = Math.max(a.length, b.length);
+  return maxLen ? 1 - dist/maxLen : 1;
+}
+function jaccard(aTokens, bTokens){
+  const A = new Set(aTokens), B = new Set(bTokens);
+  if(!A.size || !B.size) return 0;
+  let inter = 0;
+  for(const t of A) if(B.has(t)) inter++;
+  const union = new Set([...A, ...B]).size;
+  return inter / union;
+}
+function similaridadeNomes(nomeAnorm, nomeBnorm){
+  const texto = similaridadeTexto(nomeAnorm, nomeBnorm);
+  const tA = tokensSignificativos(nomeAnorm), tB = tokensSignificativos(nomeBnorm);
+  const jac = jaccard(tA, tB);
+  const flA = tA.length ? tA[0]+"|"+tA[tA.length-1] : "";
+  const flB = tB.length ? tB[0]+"|"+tB[tB.length-1] : "";
+  const boostPrimeiroUltimo = (flA && flA===flB) ? 0.18 : 0;
+  return Math.min(1, texto*0.45 + jac*0.37 + boostPrimeiroUltimo);
+}
+const LIMIAR_NOME_PARECIDO = 0.6;
+function empresasEquivalentes(nomeA, nomeB){
+  if(!nomeA || !nomeB) return false;
+  const a = normName(nomeA), b = normName(nomeB);
+  if(a === b) return true;
+  return similaridadeTexto(a, b) >= 0.9; // absorve "LTD" x "LTDA", pontuação, etc.
+}
+function melhorCorrespondenciaAtivo(nomeNorm, competencia){
+  let melhor = null;
+  for(const a of ativosParaCompetencia(competencia).ativos){
+    const score = similaridadeNomes(nomeNorm, a.nomeNorm);
+    if(score >= LIMIAR_NOME_PARECIDO && (!melhor || score > melhor.score)){
+      melhor = {ativo: a, score};
+    }
+  }
+  return melhor;
+}
+
+function excelSerialToISO(n){
+  if(typeof n !== "number") return null;
+  const d = new Date(Math.round((n - 25569) * 86400 * 1000));
+  return d.toISOString().slice(0,10);
+}
+function mesLabel(comp){
+  const [y,m] = comp.split("-");
+  const nomes = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+  return `${nomes[parseInt(m,10)-1]}/${y}`;
+}
+function mesLabelCurto(comp){
+  const [y,m] = comp.split("-");
+  const nomes = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+  return `${nomes[parseInt(m,10)-1]}/${y.slice(2)}`;
+}
+function titularCert(certificado){
+  return certificado.split("/")[0];
+}
+function titularKey(empresa, certificado){
+  // Certificados só são únicos dentro de uma subfatura (empresa) — a chave
+  // de agrupamento precisa incluir a empresa para não colidir entre elas.
+  return (empresa||"") + "|" + titularCert(certificado);
+}
+function toast(msg, isErr){
+  const root = document.getElementById("toastRoot");
+  const el = document.createElement("div");
+  el.className = "toast" + (isErr ? " err" : "");
+  el.textContent = msg;
+  root.appendChild(el);
+  setTimeout(()=>{ el.remove(); }, 4200);
+}
+
+/* ============================================================
+   IMPORT — CADASTRO DE ATIVOS (xls/xlsx Alterdata)
+============================================================ */
+function findCol(headerRow, candidates){
+  const norm = h => normName(h);
+  for(const cand of candidates){
+    const idx = headerRow.findIndex(h => norm(h) === norm(cand));
+    if(idx >= 0) return idx;
+  }
+  return -1;
+}
+async function parseAtivosFile(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:"array", cellDates:false});
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:""});
+  if(!rows.length) throw new Error("Planilha vazia.");
+  const header = rows[0].map(String);
+  const cEmpCod = findCol(header, ["Empresa"]);
+  const cEmpNome = findCol(header, ["Nome da Empresa"]);
+  const cMat = findCol(header, ["Funcionário","Funcionario"]);
+  const cNome = findCol(header, ["Nome do Funcionário","Nome do Funcionario"]);
+  const cDepto = findCol(header, ["Departamento"]);
+  const cFuncao = findCol(header, ["Função","Funcao"]);
+  const cAdm = findCol(header, ["Admissão","Admissao"]);
+  const cCpf = findCol(header, ["CPF"]);
+  if(cNome < 0) throw new Error("Não encontrei a coluna 'Nome do Funcionário' na planilha — verifique se é o arquivo correto.");
+  const out = [];
+  for(let i=1;i<rows.length;i++){
+    const r = rows[i];
+    if(!r || !r[cNome]) continue;
+    const nome = String(r[cNome]).trim();
+    if(!nome) continue;
+    out.push({
+      empresaCod: cEmpCod>=0 ? String(r[cEmpCod]||"").trim() : "",
+      empresaNome: cEmpNome>=0 ? String(r[cEmpNome]||"").trim() : "",
+      matricula: cMat>=0 ? String(r[cMat]||"").trim() : "",
+      nome,
+      nomeNorm: normName(nome),
+      departamento: cDepto>=0 ? String(r[cDepto]||"").trim() : "",
+      funcao: cFuncao>=0 ? String(r[cFuncao]||"").trim() : "",
+      admissao: cAdm>=0 ? (typeof r[cAdm]==="number" ? excelSerialToISO(r[cAdm]) : parseDateBR(r[cAdm]) || null) : null,
+      cpf: cCpf>=0 ? String(r[cCpf]||"").trim() : "",
+    });
+  }
+  if(!out.length) throw new Error("Nenhum funcionário encontrado no arquivo.");
+  return out;
+}
+function salvarAtivos(competencia, file, ativos){
+  state.ativosPorCompetencia[competencia] = {ativos, arquivo: file.name, importadoEm: new Date().toISOString()};
+  persistAtivos(competencia);
+  return ativos.length;
+}
+async function importAtivosFile(file, competencia){
+  const ativos = await parseAtivosFile(file);
+  return salvarAtivos(competencia, file, ativos);
+}
+function competenciasAtivos(){
+  return Object.keys(state.ativosPorCompetencia).sort();
+}
+// Pega o snapshot de ativos mais apropriado pra uma competência: o mais recente EM OU ANTES dela
+// (o departamento/empresa de alguém em setembro deve usar o cadastro de setembro, não um import de
+// dezembro feito depois) — se não achar nenhum anterior/igual, cai pro mais antigo disponível em vez
+// de voltar vazio (melhor uma base desatualizada do que nenhuma).
+function ativosParaCompetencia(competencia){
+  const comps = competenciasAtivos();
+  if(!comps.length) return {ativos: [], competencia: null};
+  if(!competencia) return {ativos: state.ativosPorCompetencia[comps[comps.length-1]].ativos, competencia: comps[comps.length-1]};
+  let melhor = null;
+  for(const c of comps){ if(c <= competencia) melhor = c; }
+  if(!melhor) melhor = comps[0];
+  return {ativos: state.ativosPorCompetencia[melhor].ativos, competencia: melhor};
+}
+function normEmpresaCod(x){
+  const n = parseInt(x, 10);
+  return isNaN(n) ? null : String(n);
+}
+// Mapa oficial "código da empresa (Alterdata) -> subfatura da Bradesco" — muito mais confiável
+// que comparar nomes de empresa por semelhança de texto (ver empresasEquivalentes()).
+async function importarSubfaturas(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:"array", cellDates:false});
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:""});
+  if(!rows.length) throw new Error("Planilha vazia.");
+  const header = rows[0].map(String);
+  const cCod = findCol(header, ["Código","Codigo"]);
+  const cNome = findCol(header, ["Nome"]);
+  const cSub = findCol(header, ["SUBFATURA","Subfatura"]);
+  if(cCod<0 || cSub<0) throw new Error("Não encontrei as colunas 'Código' e 'SUBFATURA' na planilha.");
+  const mapa = {};
+  let n = 0;
+  for(let i=1;i<rows.length;i++){
+    const r = rows[i];
+    const cod = normEmpresaCod(r[cCod]);
+    const sub = String(r[cSub]||"").trim();
+    if(!cod || !sub) continue;
+    const m = /^(\d{4})\s*-\s*(.+)$/.exec(sub);
+    if(!m) continue;
+    mapa[cod] = {codigoSubfatura: m[1], nomeSubfatura: m[2].trim(), empresaNome: cNome>=0 ? String(r[cNome]||"").trim() : ""};
+    n++;
+  }
+  if(!n) throw new Error("Nenhuma linha com código + subfatura reconhecida.");
+  state.subfaturasPorCodigo = mapa;
+  state.subfaturasArquivo = file.name;
+  state.subfaturasImportadoEm = new Date().toISOString();
+  persistSubfaturas();
+  return n;
+}
+
+// Mapa "empresa + departamento -> centro de custo", usado só para ratear a exportação de
+// beneficiários por centro de custo. Fonte: "Centro de Custo - Plano de Saúde.xlsx", um arquivo
+// dedicado (Nome da Empresa | Departamento | Centro de Custo, uma linha por combinação real) que
+// já cobre TODAS as empresas do grupo diretamente com seu próprio código de centro de custo (ex.
+// "13009 - Rio Ave 200 Spe Ltda - Obra") — substituiu a tentativa anterior de combinar as abas
+// RSI/INV (só Subholding/Investimentos) com um fallback genérico sem código pras demais SPEs, que
+// era menos preciso pra essas empresas menores.
+function importarCentroCustos_lerLinhas(wb){
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:""});
+  if(!rows.length) throw new Error("Planilha vazia.");
+  const header = rows[0].map(String);
+  const cEmpresa = findCol(header, ["Nome da Empresa","Empresa"]);
+  const cDepto = findCol(header, ["Departamento"]);
+  const cCC = findCol(header, ["Centro de Custo","Centro de custo"]);
+  if(cEmpresa<0 || cDepto<0 || cCC<0) throw new Error('Não encontrei as colunas "Nome da Empresa", "Departamento" e "Centro de Custo" na planilha.');
+  const mapa = {};
+  let n = 0;
+  for(let i=1;i<rows.length;i++){
+    const r = rows[i];
+    const empresa = String(r[cEmpresa]||"").trim();
+    const depto = String(r[cDepto]||"").trim();
+    const cc = String(r[cCC]||"").trim();
+    if(!empresa || !depto || !cc) continue;
+    mapa[normName(empresa)+"|"+normName(depto)] = cc;
+    n++;
+  }
+  return {mapa, n};
+}
+async function importarCentroCustos(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:"array", cellDates:false});
+  const {mapa, n} = importarCentroCustos_lerLinhas(wb);
+  if(!n) throw new Error("Nenhuma linha com empresa + departamento + centro de custo reconhecida.");
+  state.centroCustoMapa = mapa;
+  state.centroCustoArquivo = file.name;
+  state.centroCustoImportadoEm = new Date().toISOString();
+  persistCentroCusto();
+  return n;
+}
+// Resolve o centro de custo de um funcionário (cadastro de ativos) pela combinação exata
+// empresa+departamento — nunca inventa (sem combinação encontrada = sem centro de custo, mostrado
+// como "NÃO MAPEADO" na exportação pra revisão manual).
+function centroCustoParaAtivo(ativo){
+  if(!ativo) return null;
+  const deptoNorm = normName(ativo.departamento||"");
+  const empresaNorm = normName(ativo.empresaNome||"");
+  if(!deptoNorm || !empresaNorm) return null;
+  const mapa = state.centroCustoMapa || {};
+  return mapa[empresaNorm+"|"+deptoNorm] || null;
+}
+
+/* ============================================================
+   PDF — EXTRAÇÃO DE LINHAS (pdf.js)
+============================================================ */
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+async function extractPdfLines(file){
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({data: buf}).promise;
+  const allLines = [];
+  for(let p=1; p<=doc.numPages; p++){
+    const page = await doc.getPage(p);
+    const content = await page.getTextContent();
+    const items = content.items.filter(it => it.str && it.str.trim().length);
+    // agrupa por y (linha), tolerância de 2.5pt
+    const rows = [];
+    for(const it of items){
+      const y = it.transform[5];
+      let row = rows.find(r => Math.abs(r.y - y) < 2.5);
+      if(!row){ row = {y, items:[]}; rows.push(row); }
+      row.items.push(it);
+    }
+    rows.sort((a,b)=> b.y - a.y);
+    for(const row of rows){
+      row.items.sort((a,b)=> a.transform[4] - b.transform[4]);
+      let line = "";
+      let lastEnd = null;
+      for(const it of row.items){
+        const x = it.transform[4];
+        if(lastEnd!=null && x - lastEnd > 1.5 && !line.endsWith(" ")) line += " ";
+        line += it.str;
+        lastEnd = x + (it.width||0);
+      }
+      line = line.replace(/\s+/g," ").trim();
+      if(line) allLines.push(line);
+    }
+  }
+  return allLines;
+}
+
+/* ============================================================
+   PDF — PARSER FATURA (Bradesco Saúde / Bradesco Dental)
+   Estrutura observada: cada "subfatura" cobre uma empresa
+   (estipulante) do grupo. Duas seções por subfatura:
+     1) lista de beneficiários (titulares + dependentes)
+     2) "Incidência de Fator Moderador / Franquia" (eventos de
+        coparticipação, só aparece quando há uso no mês)
+============================================================ */
+const PARENTESCOS = new Set(["CONJ","FILH","OUTR"]);
+const MOV_CODES = new Set(["IM","IR","RM","RR","AM","AR","RE","AD","CM","CR","TM","TR","DM","DR"]);
+const ESTADOS_CIVIS = new Set(["CAS","SOLT","OUTR","VIUV","DIV","UNI"]);
+
+function parseSubfaturaHeader(line){
+  // A tabela "Cia Suc ... Subfatura NNNN - NOME DA EMPRESA NNN - RAMO ... DD/MM/AAAA ..." sai
+  // linearizada numa linha só pelo pdf.js; procura o trecho "NNNN - nome NNN" em qualquer
+  // lugar da linha (não ancorado no início). Usa a DATA DE EMISSÃO (sempre presente logo depois
+  // do código de ramo) como âncora à direita, com captura gulosa — não a primeira sequência de
+  // 3 dígitos, porque algumas razões sociais reais têm número no meio (ex.: "RIO AVE 200 SPE
+  // LTDA", "RIO AVE 130 SPE LTDA"), o que fazia uma versão anterior (não gulosa, sem âncora de
+  // data) cortar o nome ali por engano.
+  const m = /\b(\d{4})\b\s*-\s*(.+)\s+\d{3}\b[^\d]*?\d{2}\/\d{2}\/\d{4}/.exec(line);
+  if(!m) return null;
+  let nome = m[2].replace(/\(GNS\)\s*$/,"").trim();
+  if(nome.length < 4) return null;
+  if(/^\d+$/.test(nome)) return null;
+  return {codigo: m[1], nome};
+}
+
+function parseBeneficiarioLine(line){
+  const tokens = line.split(" ");
+  if(tokens.length < 8) return null;
+  if(!/^\d{6,8}\/\d{2}$/.test(tokens[0])) return null;
+  const certificado = tokens[0];
+  let i = 1;
+  const dateIdx = tokens.findIndex((t,idx)=> idx>=i && /^\d{2}\/\d{2}\/\d{4}$/.test(t));
+  if(dateIdx < 0) return null;
+  const nome = tokens.slice(i, dateIdx).join(" ").trim();
+  if(!nome) return null;
+  i = dateIdx;
+  const nascimento = parseDateBR(tokens[i]); i++;
+  if(!/^(FEM|MAS)$/.test(tokens[i]||"")) return null;
+  const sexo = tokens[i]; i++;
+  if(!ESTADOS_CIVIS.has(tokens[i]||"")) return null;
+  i++; // estado civil (não usado na UI)
+  let parentesco = "";
+  if(PARENTESCOS.has(tokens[i]||"")){ parentesco = tokens[i]; i++; }
+  const plano = tokens[i]; i++;
+  if(!plano || !/^\d{2}\/\d{2}\/\d{4}$/.test(tokens[i]||"")) return null;
+  const dataInicio = parseDateBR(tokens[i]); i++;
+  let movCode = "";
+  if(MOV_CODES.has(tokens[i]||"")){ movCode = tokens[i]; i++; } // código de movimento (ex.: IM/IR/CM/CR)
+  if(!/^\d{2}\/\d{4}$/.test(tokens[i]||"")) return null;
+  const mesAno = tokens[i]; i++;
+  const valor = parseNumBR(tokens[i]||"0"); i++;
+  const participacao = parseNumBR(tokens[i]||"0");
+  return {certificado, nome, nomeNorm: normName(nome), nascimento, sexo, parentesco, plano, dataInicio, movCode, mesAno, valor, participacao};
+}
+
+function parseBeneficiarioContinuationLine(line, lastCertificado){
+  // linhas de ajuste retroativo: "TNWE 27/07/2026 CM 09/2026 464,10- 0,00"
+  const tokens = line.split(" ");
+  if(tokens.length < 4) return null;
+  if(!/^[A-Z][A-Z0-9]{2,4}$/.test(tokens[0])) return null;
+  if(!/^\d{2}\/\d{2}\/\d{4}$/.test(tokens[1]||"")) return null;
+  let i = 2;
+  let movCode = "";
+  if(MOV_CODES.has(tokens[i]||"")){ movCode = tokens[i]; i++; }
+  if(!/^\d{2}\/\d{4}$/.test(tokens[i]||"")) return null;
+  const mesAno = tokens[i]; i++;
+  const valor = parseNumBR(tokens[i]||"0"); i++;
+  const participacao = parseNumBR(tokens[i]||"0");
+  if(!lastCertificado) return null;
+  return {certificado:lastCertificado, movCode, mesAno, valor, participacao, ajuste:true};
+}
+
+// Usado só quando um evento traz um certificado que a lista de beneficiários não conhece (pessoa
+// "sem cadastro" — ver coparticipacaoPorBeneficiario): tenta separar "Paciente" de "Prestador" pela
+// primeira palavra reconhecível de prestador de serviço de saúde. Não é garantido (um prestador pode
+// ser o nome de um médico, sem nenhuma dessas palavras) — quando não acha nada, o chamador usa o
+// texto inteiro como veio na fatura, sem inventar onde corta.
+const PRESTADOR_KEYWORDS = new Set(["HOSPITAL","CLINICA","CLÍNICA","LABORATORIO","LABORATÓRIO","INSTITUTO","CENTRO","POLICLINICA","POLICLÍNICA","MATERNIDADE","UNIDADE","COOPANEST","COOPERATIVA","CEFOPE","DIAGMAX","IMAGEM","RADIOLOGIA","MEDICA","MÉDICA","CONSULTORIO","CONSULTÓRIO","SOS","CASA","DIAGNOSTICO","DIAGNÓSTICO","ONCO","CARDIO","ORTOPEDIA","PRONTO","MATER","FUNDACAO","FUNDAÇÃO"]);
+function splitPacientePrestador(tokens){
+  for(let i=1;i<tokens.length;i++){
+    if(PRESTADOR_KEYWORDS.has(tokens[i])) return {paciente: tokens.slice(0,i).join(" "), prestador: tokens.slice(i)};
+  }
+  return null;
+}
+function parseEventoLine(line, nomesPorCertificado, lastCertificado){
+  // "0000019/00 THUANE DE SOUZA HOSPITAL PORTUGUES 30/04/2026 0894859002 278,85 83,66"
+  // continuação (mesmo paciente): "HOSPITAL PORTUGUES 18/05/2026 0897715823 500,05 150,02"
+  const tokens = line.split(" ");
+  if(tokens.length < 5) return null;
+  const nums = [];
+  for(let k=tokens.length-1; k>=0 && nums.length<2; k--){
+    if(/^-?[\d.,]+$/.test(tokens[k])) nums.unshift(tokens[k]); else break;
+  }
+  if(nums.length < 2) return null;
+  const pago = parseNumBR(nums[0]);
+  const participacao = parseNumBR(nums[1]);
+  const rest = tokens.slice(0, tokens.length-2);
+  const dateIdx = [...rest].reverse().map((t,idx)=>({t,idx})).find(o=>/^\d{2}\/\d{2}\/\d{4}$/.test(o.t));
+  if(!dateIdx) return null;
+  const dateRealIdx = rest.length - 1 - dateIdx.idx;
+  const dataEvento = parseDateBR(rest[dateRealIdx]);
+  const docProced = rest.slice(dateRealIdx+1).join(" ").trim();
+  let head = rest.slice(0, dateRealIdx);
+  let certificado = lastCertificado;
+  let pacienteNome = null;
+  if(head.length && /^\d{6,8}\/\d{2}$/.test(head[0])){
+    certificado = head[0];
+    const nome = nomesPorCertificado[certificado];
+    let rem = head.slice(1);
+    if(nome){
+      const nomeTokens = nome.split(" ");
+      if(rem.slice(0, nomeTokens.length).join(" ") === nome){
+        rem = rem.slice(nomeTokens.length);
+      }
+    } else {
+      // certificado que a lista de beneficiários não conhece — tenta achar o nome do paciente
+      // mesmo assim, pela primeira palavra de prestador reconhecível (ver splitPacientePrestador).
+      // Quando não acha nenhuma (prestador sem nenhuma palavra-chave conhecida, ex. "CERPE - GILSON
+      // CIDRIM"), usa o texto INTEIRO da linha como nome em vez de um rótulo genérico — pedido
+      // explícito do usuário ("utilizar o nome como mostra na fatura"): melhor mostrar o texto real
+      // (mesmo que venha com o prestador junto) do que inventar um placeholder sem nenhuma
+      // informação da fatura.
+      const split = splitPacientePrestador(rem);
+      if(split){ pacienteNome = split.paciente; rem = split.prestador; }
+      else pacienteNome = rem.join(" ");
+    }
+    head = rem;
+  }
+  const prestador = head.join(" ").trim();
+  if(!certificado || !prestador) return null;
+  return {certificado, prestador, pacienteNome, dataEvento, docProced, pago, participacao};
+}
+
+const VALOR_BR_RE = /([\d]{1,3}(?:\.\d{3})*,\d{2})\s*$/;
+function parseFaturaLines(lines){
+  const beneficiarios = [];
+  const eventos = [];
+  let currentEmpresa = null;
+  let currentEmpresaCodigo = null;
+  let lastCert = null;
+  let inEventos = false;
+  let subfaturasEncontradas = 0;
+  // Números de certificado só são únicos DENTRO de uma subfatura (empresa) —
+  // o mesmo número pode se repetir em outra empresa do grupo. Por isso o
+  // dicionário nome-por-certificado é reiniciado a cada troca de subfatura.
+  let nomesPorCertificado = {};
+  // O boleto/IOF é IMPRESSO UMA VEZ POR ARQUIVO, não por subfatura — confirmado com o arquivo real:
+  // "0001 - RIO AVE SUBHOLDING INCORPORACAO.PDF" na prática agrupa 4 subfaturas (0001 SUBHOLDING +
+  // 0010 MSB CONSULTORIA + 0011 FCS ENGENHARIA + 0012 WILLIAM PALACIO FERREIRA, todas sob o mesmo
+  // Apólice/Estipulante) cobradas num ÚNICO boleto consolidado — e a própria planilha de conferência
+  // da Rio Ave pra esse arquivo já divide o IOF entre as 128 pessoas de TODAS as 4 subfaturas juntas,
+  // não só as da 0001. Por isso o IOF/boleto aqui não fica por código de subfatura — fica um valor só
+  // pro arquivo inteiro (pega a primeira ocorrência encontrada; o boleto costuma ser reimpresso
+  // idêntico em várias páginas do mesmo arquivo) e quem divide pela quantidade de beneficiários é
+  // rateioBeneficiarios(), usando fatura.iofPorArquivo/boletoPorArquivo (por nome do arquivo).
+  let iofTotal = null;
+  let boletoTotal = null;
+  let aguardandoIof = false, aguardandoBoleto = false;
+  // Taxa de implantação: linha própria dentro do bloco de cada subfatura, ex. "COB.REF. TAXA
+  // IMPLANTACAO AC 20,00 0,00" — confirmado no PDF real que NÃO é R$5,00 fixo por beneficiário novo
+  // (suposição inicial, coincidentemente certa em Set/2026 só porque 4 pessoas novas x R$5 = R$20,00
+  // batia com o total real) — é um valor ÚNICO por subfatura, que precisa ser dividido entre os
+  // beneficiários novos do mês, não multiplicado por R$5 cada. Regex pega o PRIMEIRO valor BR da
+  // linha (o da taxa), não o último (a participação, sempre 0,00 aqui) — VALOR_BR_RE é ancorado no
+  // fim da linha, então não serve pra isso.
+  const TAXA_IMPLANTACAO_RE = /TAXA\s+IMPLANTACAO\s+\S+\s+([\d.]+,\d{2})\s+[\d.,]+\s*$/i;
+  const taxaImplantacaoPorEmpresa = {};
+  for(const raw of lines){
+    const line = raw.trim();
+    if(!line) continue;
+    if(aguardandoBoleto){
+      const m = VALOR_BR_RE.exec(line);
+      if(m && boletoTotal==null) boletoTotal = parseNumBR(m[1]);
+      aguardandoBoleto = false;
+    }
+    if(aguardandoIof){
+      const m = VALOR_BR_RE.exec(line);
+      if(m && iofTotal==null) iofTotal = parseNumBR(m[1]);
+      aguardandoIof = false;
+    }
+    if(/Valor da Moeda.*Valor do Documento/i.test(line)){ aguardandoBoleto = true; continue; }
+    if(/Chave Valor do IOF/i.test(line)){ aguardandoIof = true; continue; }
+    const mTaxa = TAXA_IMPLANTACAO_RE.exec(line);
+    if(mTaxa){
+      if(currentEmpresa) taxaImplantacaoPorEmpresa[currentEmpresa] = (taxaImplantacaoPorEmpresa[currentEmpresa]||0) + parseNumBR(mTaxa[1]);
+      continue;
+    }
+    if(/^Incid[êe]ncia de Fator Moderador/i.test(line)){ inEventos = true; continue; }
+    if(/^(SPG\/Grupos Especiais|BRADESCO (SAUDE|DENTAL)|MENSAGENS|Nº Ap[óo]lice|N[º°] Contrato|Certif\.|Resumo|Paciente|Local de Pagamento)/i.test(line)) continue;
+    const sf = parseSubfaturaHeader(line);
+    if(sf && sf.nome !== currentEmpresa){
+      currentEmpresa = sf.nome; currentEmpresaCodigo = sf.codigo; inEventos = false; lastCert = null; nomesPorCertificado = {};
+      subfaturasEncontradas++;
+      continue;
+    }
+    if(!inEventos){
+      const b = parseBeneficiarioLine(line);
+      if(b){
+        beneficiarios.push(Object.assign(b, {empresa: currentEmpresa, empresaCodigo: currentEmpresaCodigo}));
+        lastCert = b.certificado;
+        if(!b.parentesco) nomesPorCertificado[b.certificado] = b.nome;
+        continue;
+      }
+      const cont = parseBeneficiarioContinuationLine(line, lastCert);
+      if(cont){ beneficiarios.push(Object.assign(cont,{empresa:currentEmpresa, ajusteOnly:true})); continue; }
+    } else {
+      const ev = parseEventoLine(line, nomesPorCertificado, lastCert);
+      if(ev){ eventos.push(Object.assign(ev,{empresa:currentEmpresa})); lastCert = ev.certificado; continue; }
+    }
+  }
+  return {beneficiarios, eventos, subfaturasEncontradas, iofTotal, boletoTotal, taxaImplantacaoPorEmpresa};
+}
+
+function detectarCompetenciaDasLinhas(lines){
+  // Âncora principal: "864 MEDICA 09/2026 01" / "864 DENTAL 09/2026 01" (Cia/Ramo/Fatura M-A/nr) —
+  // aparece em toda página da fatura, mesmo quando a subfatura não tem nenhum beneficiário no mês
+  // (ex.: subfatura zerada, só com estorno contábil), diferente da coluna Mês/Ano dos beneficiários.
+  for(const raw of lines){
+    const m = /\b(?:MEDICA|DENTAL)\s+(\d{2})\/(\d{4})\s+\d{2}\b/i.exec(raw);
+    if(m) return `${m[2]}-${m[1]}`;
+  }
+  return null;
+}
+function detectarCompetencia(beneficiarios){
+  // usa o valor de Mês/Ano mais frequente entre os beneficiários (a própria fatura já traz essa coluna)
+  const contagem = {};
+  for(const b of beneficiarios){
+    if(!b.mesAno) continue;
+    contagem[b.mesAno] = (contagem[b.mesAno]||0) + 1;
+  }
+  let melhor = null, melhorN = 0;
+  for(const [mesAno, n] of Object.entries(contagem)) if(n > melhorN){ melhor = mesAno; melhorN = n; }
+  if(!melhor) return null;
+  const [m, y] = melhor.split("/");
+  return `${y}-${m}`;
+}
+async function parseFaturaFile(file){
+  const lines = await extractPdfLines(file);
+  const {beneficiarios, eventos, subfaturasEncontradas, iofTotal, boletoTotal, taxaImplantacaoPorEmpresa} = parseFaturaLines(lines);
+  // Uma subfatura pode legitimamente não ter nenhum beneficiário no mês (ex.: todo mundo já foi
+  // transferido/cancelado antes, sobrando só um estorno contábil) — só é erro de fato quando nem
+  // isso foi reconhecido, ou seja, o PDF não parece ser uma fatura técnica Bradesco de verdade.
+  if(!beneficiarios.length && !subfaturasEncontradas){
+    throw new Error(`"${file.name}": não encontrei nenhuma subfatura reconhecível no PDF — verifique se é uma fatura técnica Bradesco Saúde/Dental no formato esperado.`);
+  }
+  const competenciaDetectada = detectarCompetenciaDasLinhas(lines) || detectarCompetencia(beneficiarios);
+  return {beneficiarios, eventos, competenciaDetectada, iofTotal, boletoTotal, taxaImplantacaoPorEmpresa};
+}
+function salvarFatura(modulo, competencia, file, parsed){
+  // Pode existir mais de uma fatura PDF pro mesmo mês (grupos de apólice/CNPJ diferentes) —
+  // mescla com o que já existe em vez de substituir; reimportar o MESMO arquivo troca só as linhas dele.
+  const existente = state.modulos[modulo].faturas[competencia];
+  const agora = new Date().toISOString();
+  const beneficiariosNovos = parsed.beneficiarios.map(b=>({...b, origemArquivo:file.name}));
+  const eventosNovos = parsed.eventos.map(e=>({...e, origemArquivo:file.name}));
+  const temFaturaRealExistente = existente && existente.eventos;
+  const arquivosAnteriores = temFaturaRealExistente
+    ? (existente.arquivos || (existente.arquivo ? [{nome:existente.arquivo, importadoEm:existente.importadoEm}] : []))
+    : [];
+  const arquivos = [...arquivosAnteriores.filter(a=>a.nome!==file.name), {nome:file.name, importadoEm:agora}];
+  const beneficiariosBase = temFaturaRealExistente ? existente.beneficiarios.filter(b=>b.origemArquivo!==file.name) : [];
+  const eventosBase = temFaturaRealExistente ? existente.eventos.filter(e=>e.origemArquivo!==file.name) : [];
+  const iofBase = temFaturaRealExistente ? (existente.iofPorArquivo||{}) : {};
+  const boletoBase = temFaturaRealExistente ? (existente.boletoPorArquivo||{}) : {};
+  const taxaBase = temFaturaRealExistente ? (existente.taxaImplantacaoPorEmpresa||{}) : {};
+  state.modulos[modulo].faturas[competencia] = {
+    competencia, importadoEm: agora, arquivos,
+    beneficiarios: [...beneficiariosBase, ...beneficiariosNovos],
+    eventos: [...eventosBase, ...eventosNovos],
+    iofPorArquivo: {...iofBase, [file.name]: parsed.iofTotal},
+    boletoPorArquivo: {...boletoBase, [file.name]: parsed.boletoTotal},
+    taxaImplantacaoPorEmpresa: {...taxaBase, ...(parsed.taxaImplantacaoPorEmpresa||{})},
+    parcelamentos: (existente && existente.parcelamentos) || {},
+  };
+  persistFatura(modulo, competencia);
+  return {beneficiarios: parsed.beneficiarios.length, eventos: parsed.eventos.length};
+}
+async function importFaturaFile(modulo, file, competencia){
+  const parsed = await parseFaturaFile(file);
+  return salvarFatura(modulo, competencia, file, parsed);
+}
+
+/* ============================================================
+   DERIVAÇÕES / CRUZAMENTOS
+============================================================ */
+function ativosPorNome(competencia){
+  const map = new Map();
+  for(const a of ativosParaCompetencia(competencia).ativos) if(!map.has(a.nomeNorm)) map.set(a.nomeNorm, a);
+  return map;
+}
+function faturaAtual(modulo){
+  const comps = Object.keys(state.modulos[modulo].faturas).sort();
+  if(!comps.length) return null;
+  return state.modulos[modulo].faturas[comps[comps.length-1]];
+}
+function competenciasDisponiveis(modulo){
+  return Object.keys(state.modulos[modulo].faturas).sort();
+}
+// Valor líquido por pessoa (empresa+certificado): soma a linha principal do beneficiário com TODAS
+// as linhas de ajuste/continuação dela (estornos, cancelamentos retroativos — códigos CM/CR/etc.,
+// ex. "464,10-" impresso com o sinal de menos DEPOIS do número). parseNumBR já trata esse "-" à
+// direita corretamente (isso nunca foi o bug); o problema real é que essas linhas de ajuste são
+// filtradas com `!b.ajusteOnly` em quase todo o app (corretamente, pra não contar como um
+// "beneficiário" a mais) — o que também descartava o VALOR delas, sem nunca somar de volta no total
+// da pessoa. Pedido do usuário, com caso real: JOAO M FERREIRA SIQUEIRA MACIEL tem a linha principal
+// de Set/2026 (464,10) e 3 linhas de ajuste (CM 09/2026 -464,10, CR 08/2026 -464,10, CR 07/2026
+// -185,64) — cancelamento em processamento, a operadora está estornando os meses cobrados
+// anteriormente, então o valor líquido dele neste mês é NEGATIVO (-649,74), não os 464,10 da linha
+// principal sozinha.
+function valorLiquidoPorCertificado(fatura){
+  const map = new Map();
+  for(const b of (fatura.beneficiarios||[])){
+    const key = (b.empresa||"")+"|"+b.certificado;
+    map.set(key, (map.get(key)||0) + (b.valor||0));
+  }
+  return map;
+}
+// Taxa de implantação (linha própria da fatura "COB.REF. TAXA IMPLANTACAO", ex. "AC 20,00 0,00") —
+// cobrada pela operadora como um valor ÚNICO POR SUBFATURA, não R$5,00 fixo por pessoa (primeira
+// suposição, feita em Set/2026 sem essa linha ainda identificada — coincidentemente batia porque
+// eram exatamente 4 pessoas novas x R$5,00 = R$20,00 = o valor real impresso; em Out/2026 o mesmo
+// R$20,00 aparece mas com 6 pessoas novas, provando que não é por cabeça). Divide o valor REAL
+// impresso (fatura.taxaImplantacaoPorEmpresa) igualmente entre os beneficiários "novos este mês"
+// daquela MESMA subfatura — código de movimento IM (Inclusão no Mês) ou IR (Inclusão Retroativa) na
+// linha (principal ou de ajuste) cujo Mês/Ano bate com a competência desta própria fatura.
+function taxaImplantacaoPorCertificado(fatura){
+  const [y,m] = fatura.competencia.split("-");
+  const mesAnoFatura = `${m}/${y}`;
+  const elegiveisPorEmpresa = {};
+  for(const b of (fatura.beneficiarios||[])){
+    if(b.mesAno !== mesAnoFatura) continue;
+    if(b.movCode === "IM" || b.movCode === "IR"){
+      const emp = b.empresa || "";
+      if(!elegiveisPorEmpresa[emp]) elegiveisPorEmpresa[emp] = new Set();
+      elegiveisPorEmpresa[emp].add(b.certificado);
+    }
+  }
+  const taxas = fatura.taxaImplantacaoPorEmpresa || {};
+  const map = new Map();
+  for(const [empresa, certs] of Object.entries(elegiveisPorEmpresa)){
+    const taxaTotal = taxas[empresa] || 0;
+    if(!taxaTotal || !certs.size) continue;
+    const porPessoa = taxaTotal / certs.size;
+    for(const cert of certs) map.set(empresa+"|"+cert, porPessoa);
+  }
+  return map;
+}
+function titularesDaFatura(fatura){
+  // Faturas vindas só da planilha histórica (sem PDF real) não têm lista de beneficiários/subfatura
+  // no mesmo formato — não há titulares "da fatura" pra checar nesse caso.
+  if(!fatura.beneficiarios) return [];
+  const seen = new Map();
+  for(const b of fatura.beneficiarios){
+    if(b.parentesco) continue;
+    const k = titularKey(b.empresa, b.certificado);
+    if(!seen.has(k)) seen.set(k, b);
+  }
+  return [...seen.values()];
+}
+function analisarTitulares(fatura){
+  const ativosMap = ativosPorNome(fatura.competencia);
+  const desligados = [];
+  const pendentes = [];
+  const divergenciasEmpresa = [];
+  for(const t of titularesDaFatura(fatura)){
+    let ativo = ativosMap.get(t.nomeNorm) || null;
+    if(!ativo){
+      const resolucao = state.nomeResolucoes[t.nomeNorm];
+      if(resolucao){
+        if(resolucao.status === "diferente"){ desligados.push(t); continue; }
+        if(resolucao.status === "mesmo" && resolucao.ativoNome){
+          ativo = ativosMap.get(normName(resolucao.ativoNome)) || null;
+        }
+        if(!ativo) continue; // "naoClt" (ou "mesmo" sem registro localizável) — sem cadastro pra comparar empresa
+      } else {
+        const melhor = melhorCorrespondenciaAtivo(t.nomeNorm, fatura.competencia);
+        if(melhor){ pendentes.push({titular: t, sugestao: melhor.ativo, score: melhor.score}); continue; }
+        desligados.push(t);
+        continue;
+      }
+    }
+    // titular identificado no cadastro (exato ou por resolução "mesmo") — confere se está na subfatura da empresa certa.
+    // Prioriza o mapa oficial código->subfatura (importarSubfaturas) quando disponível — muito mais
+    // confiável que comparar nomes por semelhança de texto, que sofre com truncamentos tipo "LTD" x "LTDA".
+    let divergente = false;
+    const mapaSub = ativo ? state.subfaturasPorCodigo[normEmpresaCod(ativo.empresaCod)] : null;
+    if(ativo && t.empresaCodigo && mapaSub){
+      divergente = t.empresaCodigo !== mapaSub.codigoSubfatura;
+    } else if(ativo && t.empresa && ativo.empresaNome){
+      divergente = !empresasEquivalentes(t.empresa, ativo.empresaNome);
+    }
+    if(divergente && !state.empresaIgnoradas[t.nomeNorm]){
+      divergenciasEmpresa.push({titular: t, ativo, empresaEsperada: mapaSub ? `${mapaSub.codigoSubfatura} - ${mapaSub.nomeSubfatura}` : ativo.empresaNome});
+    }
+  }
+  return {desligados, pendentes, divergenciasEmpresa};
+}
+function marcarDivergenciaEmpresaCiente(nomeNorm){
+  state.empresaIgnoradas[nomeNorm] = {ignoradoEm: new Date().toISOString()};
+  persistResolucoes();
+}
+function desligadosNoPlano(fatura){
+  return analisarTitulares(fatura).desligados;
+}
+function resolverNome(nomeNorm, status, ativoNomeSugerido){
+  state.nomeResolucoes[nomeNorm] = {status, ativoNome: ativoNomeSugerido||null, resolvidoEm: new Date().toISOString()};
+  persistResolucoes();
+}
+/* ---- Coparticipação — por beneficiário (titular ou dependente), com parcelamento ---- */
+// Tabela de coparticipação da Rio Ave: valor total do mês -> nº máximo de parcelas oferecido ao funcionário.
+const TABELA_PARCELAMENTO = [
+  {ate:100,       max:1,  label:"Desconto total"},
+  {ate:200,       max:2,  label:"Até 2x"},
+  {ate:300,       max:3,  label:"Até 3x"},
+  {ate:400,       max:4,  label:"Até 4x"},
+  {ate:500,       max:5,  label:"Até 5x"},
+  {ate:600,       max:6,  label:"Até 6x"},
+  {ate:700,       max:7,  label:"Até 7x"},
+  {ate:800,       max:8,  label:"Até 8x"},
+  {ate:900,       max:9,  label:"Até 9x"},
+  {ate:Infinity,  max:10, label:"Até 10x"},
+];
+function faixaParcelamento(valor){
+  for(const f of TABELA_PARCELAMENTO) if(valor <= f.ate) return f;
+  return TABELA_PARCELAMENTO[TABELA_PARCELAMENTO.length-1];
+}
+function competenciaAddMeses(comp, n){
+  const [y,m] = comp.split("-").map(Number);
+  const total = (y*12 + (m-1)) + n;
+  const ny = Math.floor(total/12), nm = (total%12)+1;
+  return `${ny}-${String(nm).padStart(2,"0")}`;
+}
+function coparticipacaoPorBeneficiario(fatura){
+  if(fatura.historicoBeneficiarios){
+    // fatura "leve" vinda da planilha de coparticipação (sem PDF/beneficiarios/eventos reais)
+    return fatura.historicoBeneficiarios.map(h=>({
+      key: "hist|"+h.nomeNorm, total: h.valorTotal, eventos: null,
+      beneficiario: {nome:h.nome, nomeNorm:h.nomeNorm, parentesco:h.parentesco||"", empresa:h.empresa},
+      titular: h.titularNome ? {nome:h.titularNome, nomeNorm:normName(h.titularNome)} : {nome:h.nome, nomeNorm:h.nomeNorm},
+      nomeNorm: h.nomeNorm,
+    }));
+  }
+  const map = new Map();
+  for(const ev of fatura.eventos){
+    const k = (ev.empresa||"")+"|"+ev.certificado; // pessoa exata (titular OU dependente), não reduzido ao titular
+    if(!map.has(k)) map.set(k, {key:k, total:0, eventos:0, pacienteNome:null});
+    const row = map.get(k);
+    row.total += ev.participacao;
+    row.eventos += 1;
+    if(!row.pacienteNome && ev.pacienteNome) row.pacienteNome = ev.pacienteNome;
+  }
+  const beneficiariosPorChave = new Map(fatura.beneficiarios.filter(b=>!b.ajusteOnly).map(b=>[(b.empresa||"")+"|"+b.certificado, b]));
+  const titularesPorChave = new Map(titularesDaFatura(fatura).map(t=>[titularKey(t.empresa,t.certificado), t]));
+  return [...map.values()].map(r=>{
+    const beneficiario = beneficiariosPorChave.get(r.key);
+    if(!beneficiario){
+      // Evento com certificado que não bate com nenhuma linha da lista de beneficiários — a pessoa
+      // existe de verdade (tem coparticipação real cobrada). Antes esse valor era simplesmente
+      // descartado (fazia o rateio ficar menor que o boleto real, caso real: Sofia Maria Da Silva
+      // Souza / Anderson Pereira Dos Santos Silva / Nicolas Dos Santos Silva, R$1.038,51 em
+      // Set/2026) — agora mantém como "sem cadastro", pra não perder o valor. Pedido do usuário: usa
+      // o nome COMO ESTÁ NA FATURA quando dá pra separar do prestador (r.pacienteNome, via
+      // splitPacientePrestador) — só cai no rótulo genérico "cert. NNN" quando não achou nenhuma
+      // palavra de prestador reconhecível na linha, pra não inventar onde o nome termina.
+      const [empresaOrigem] = r.key.split("|");
+      const certificado = r.key.slice(empresaOrigem.length+1);
+      const nomeReal = r.pacienteNome && r.pacienteNome.trim();
+      const nomeFallback = nomeReal || `Beneficiário sem cadastro (cert. ${certificado})`;
+      const semCadastro = {nome:nomeFallback, nomeNorm: nomeReal ? normName(nomeReal) : (normName(nomeFallback)+"_"+certificado), parentesco:"", empresa:empresaOrigem, certificado, semCadastro:true};
+      return {...r, beneficiario: semCadastro, titular: semCadastro, nomeNorm: semCadastro.nomeNorm};
+    }
+    const titular = titularesPorChave.get(titularKey(beneficiario.empresa, beneficiario.certificado));
+    return {...r, beneficiario, titular, nomeNorm: beneficiario.nomeNorm};
+  }).sort((a,b)=>b.total-a.total);
+}
+// Rateio por centro de custo, usado só na exportação de "Todos os beneficiários": para cada linha
+// da fatura (titular OU dependente), soma (a) a mensalidade da própria linha (fatura.beneficiarios[].valor),
+// (b) o valor BRUTO de coparticipação dessa pessoa NESTA fatura (ver nota abaixo, junto de "copart")
+// — pedido explícito do usuário ("o valor da mensalidade + a coparticipação do mês") — e (c) uma
+// fatia do IOF do boleto. O IOF não é pedido do usuário, mas sem ele o rateio NÃO bate com o boleto
+// real: cada boleto embute um "Valor do IOF" à parte (ex.: R$2.199,87 no arquivo
+// "0001 - RIO AVE SUBHOLDING INCORPORACAO.PDF"/Set-2026) — o arquivo real de conferência da Rio Ave
+// divide esse IOF igualmente por cabeça, mas o rateio AQUI usa proporcional à mensalidade de cada
+// beneficiário (pedido explícito do usuário, deliberadamente diferente do método simplificado da
+// planilha deles) — e um boleto pode cobrir VÁRIAS subfaturas juntas (confirmado no arquivo real
+// acima: ele agrupa as subfaturas 0001 SUBHOLDING + 0010 MSB CONSULTORIA + 0011 FCS ENGENHARIA +
+// 0012 WILLIAM PALACIO FERREIRA, todas no mesmo Apólice/Estipulante, num único boleto consolidado)
+// — por isso o IOF/boleto aqui é por ARQUIVO importado (fatura.iofPorArquivo/boletoPorArquivo, chave
+// = nome do PDF), não por código de subfatura. Verificado ponta a ponta: pra um arquivo com 1
+// subfatura só (ex.: "0015 - RIO AVE 200 SPE.PDF"), mensalidade+IOF+coparticipação bate exatamente
+// com o boleto real (diferença R$0,00) — a soma do IOF proporcional ainda fecha o total do arquivo,
+// só muda quem recebe quanto. O centro de custo é sempre o do TITULAR responsável (um dependente não tem departamento
+// próprio, quem responde por ele no rateio é o titular do certificado), resolvido pelo mesmo cadastro
+// de ativos + resoluções de nome parecido já usados no resto do app — nunca inventa um centro de
+// custo pra quem não tem departamento mapeado, só marca como "NÃO MAPEADO" pra revisão manual.
+// As pequenas SPEs abaixo (a maioria cobrada junto dentro do próprio boleto da RIO AVE SUBHOLDING —
+// ver nota do IOF acima) não têm estrutura de departamento própria (nem sempre aparecem no cadastro
+// de ativos) — por pedido explícito do usuário, todo beneficiário faturado sob elas usa sempre o
+// mesmo centro de custo fixo da Subholding, independente de departamento ou de achar (ou não) um
+// ativo correspondente. Comparação por nome da EMPRESA DA FATURA (subfatura), não do cadastro de
+// ativos — essas empresas podem nem ter funcionário nenhum no cadastro Alterdata.
+const CENTRO_CUSTO_REEMBOLSOS_SUBHOLDING = "10043 - Subholding Incorporação - Plano de Saúde e Alimentação - Reembolsos";
+const CENTRO_CUSTO_FIXO_POR_EMPRESA_FATURA = {
+  "FCS ENGENHARIA LTDA": CENTRO_CUSTO_REEMBOLSOS_SUBHOLDING,
+  "MSB CONSULTORIA IMOBILIARIA LTDA": CENTRO_CUSTO_REEMBOLSOS_SUBHOLDING,
+  "WILLIAM PALACIO FERREIRA LTDA": CENTRO_CUSTO_REEMBOLSOS_SUBHOLDING,
+  "RIO AVE POCO DA PANELA SPE LTDA.": CENTRO_CUSTO_REEMBOLSOS_SUBHOLDING,
+};
+function centroCustoFixoPorEmpresaFatura(empresaFatura){
+  if(!empresaFatura) return null;
+  for(const nome of Object.keys(CENTRO_CUSTO_FIXO_POR_EMPRESA_FATURA)){
+    if(empresasEquivalentes(empresaFatura, nome)) return CENTRO_CUSTO_FIXO_POR_EMPRESA_FATURA[nome];
+  }
+  return null;
+}
+// Beneficiário faturado sob a RIO AVE SUBHOLDING mas cujo cadastro de ativos mostra outra empresa
+// (a mesma situação de "empresa divergente" já detectada em analisarTitulares — provável
+// transferência entre empresas do grupo sem atualizar o plano) — pedido explícito do usuário: usar
+// o centro de custo de Reembolsos da Subholding pra esse caso, em vez do centro de custo da empresa
+// "errada" que o cadastro ainda mostra.
+function centroCustoDivergenciaSubholding(empresaFatura, ativo){
+  if(!ativo || !empresasEquivalentes(empresaFatura, "RIO AVE SUBHOLDING INCORPORACAO LTD")) return null;
+  if(empresasEquivalentes(ativo.empresaNome, "RIO AVE SUBHOLDING INCORPORACAO LTD")) return null;
+  return CENTRO_CUSTO_REEMBOLSOS_SUBHOLDING;
+}
+// Estas 4 empresas são pagas juntas num boleto só (mesmo arquivo/apólice — ver nota do IOF) — pedido
+// explícito do usuário: tratar como UMA fatura só no filtro de empresa e na conferência com o
+// boleto, não 4 empresas separadas. Sem isso, filtrar pra ver só "RIO AVE SUBHOLDING" sozinha
+// comparava um subconjunto de gente contra o boleto do grupo inteiro, gerando uma "diferença" que
+// não existe de verdade (a real é a soma de todos os 4 juntos).
+const GRUPO_FATURAMENTO_SUBHOLDING = [
+  "RIO AVE SUBHOLDING INCORPORACAO LTD",
+  "FCS ENGENHARIA LTDA",
+  "MSB CONSULTORIA IMOBILIARIA LTDA",
+  "WILLIAM PALACIO FERREIRA LTDA",
+];
+const GRUPO_FATURAMENTO_LABEL = "RIO AVE SUBHOLDING INCORPORACAO LTD (+ FCS Engenharia, MSB Consultoria, William Palacio Ferreira)";
+function empresaOuGrupo(empresa){
+  if(!empresa) return empresa;
+  for(const nome of GRUPO_FATURAMENTO_SUBHOLDING){
+    if(empresasEquivalentes(empresa, nome)) return GRUPO_FATURAMENTO_LABEL;
+  }
+  return empresa;
+}
+function rateioBeneficiarios(modulo, competencia){
+  const fatura = state.modulos[modulo].faturas[competencia];
+  if(!fatura || !fatura.beneficiarios) return [];
+  const ativosMap = ativosPorNome(competencia);
+  const titularesPorChave = new Map(titularesDaFatura(fatura).map(t=>[titularKey(t.empresa, t.certificado), t]));
+  // Coparticipação do rateio = só o valor bruto DESTA fatura (a soma da coluna "Participação" da
+  // "Incidência de Fator Moderador" impressa no PDF), sem nenhuma suavização entre meses — pedido
+  // explícito do usuário: "considerar essa parte em amarelo dentro somente da fatura, sem considerar
+  // os valores parcelados remanescentes". Por isso usa coparticipacaoPorBeneficiario(fatura)
+  // diretamente (já é por pessoa, titular OU dependente) em vez de coparticipacaoDoMes(), que soma
+  // parcelas em aberto de meses anteriores — certo pro painel de desconto em folha da tela, mas
+  // errado pro rateio contábil, que precisa bater com o que ESSA fatura realmente cobrou.
+  const copart = modulo === "saude" ? coparticipacaoPorBeneficiario(fatura) : [];
+  // Cruza por empresa+certificado (r.key, mesmo formato usado em coparticipacaoPorBeneficiario), NÃO
+  // por nomeNorm sozinho — duas pessoas DIFERENTES podem ter o mesmo nome em subfaturas diferentes
+  // (caso real: "Marcela Cardoso Da Mota Franca" existe tanto em RESERVA DO PAIVA SPE 01 quanto SPE
+  // 03, cada uma com sua própria coparticipação) — cruzar só por nome fazia uma sobrescrever a
+  // coparticipação da outra no Map, gerando uma diferença de R$237,32 num caso real de Out/2026.
+  const copartPorChave = new Map(copart.map(r=>[r.key, r.total]));
+  // Mensalidade do rateio = valor LÍQUIDO (linha principal + ajustes de estorno/cancelamento do
+  // mesmo certificado, ver valorLiquidoPorCertificado) — não só a linha principal sozinha, que
+  // ignora estornos retroativos reais (pedido do usuário, caso real de cancelamento em
+  // processamento).
+  const valorLiquidoMap = valorLiquidoPorCertificado(fatura);
+  const taxaImplantacaoMap = taxaImplantacaoPorCertificado(fatura);
+  function mensalidadeComTaxa(b){
+    const key = (b.empresa||"")+"|"+b.certificado;
+    const liquido = valorLiquidoMap.get(key) ?? (b.valor || 0);
+    return liquido + (taxaImplantacaoMap.get(key) || 0);
+  }
+  const beneficiariosValidos = fatura.beneficiarios.filter(b=>!b.ajusteOnly);
+  // IOF rateado proporcionalmente à mensalidade LÍQUIDA (+ taxa de implantação) de cada beneficiário
+  // (mesma base usada abaixo — se fosse a bruta, o Σ do IOF rateado deixaria de bater com o
+  // iofTotalArquivo sempre que existisse gente com ajuste/estorno/taxa, porque numerador e
+  // denominador estariam em bases diferentes). Com os dois na mesma base, Σ (mensalidade_i/total) *
+  // iofTotal = iofTotal sempre, então a conferência com o boleto continua exata.
+  const mensalidadeTotalPorArquivo = {};
+  for(const b of beneficiariosValidos){
+    mensalidadeTotalPorArquivo[b.origemArquivo] = (mensalidadeTotalPorArquivo[b.origemArquivo]||0) + mensalidadeComTaxa(b);
+  }
+  function resolverAtivo(nomeNorm){
+    let ativo = ativosMap.get(nomeNorm) || null;
+    if(!ativo){
+      const resolucao = state.nomeResolucoes[nomeNorm];
+      if(resolucao && resolucao.status === "mesmo" && resolucao.ativoNome){
+        ativo = ativosMap.get(normName(resolucao.ativoNome)) || null;
+      }
+    }
+    return ativo;
+  }
+  const linhasReais = beneficiariosValidos.map(b=>{
+    const titular = titularesPorChave.get(titularKey(b.empresa, b.certificado)) || b;
+    const ativo = resolverAtivo(titular.nomeNorm);
+    const centroCusto = centroCustoFixoPorEmpresaFatura(b.empresa) || centroCustoDivergenciaSubholding(b.empresa, ativo) || centroCustoParaAtivo(ativo);
+    const mensalidade = mensalidadeComTaxa(b);
+    const coparticipacaoMes = copartPorChave.get((b.empresa||"")+"|"+b.certificado) || 0;
+    const iofTotalArquivo = (fatura.iofPorArquivo||{})[b.origemArquivo] || 0;
+    const mensalidadeTotalArquivo = mensalidadeTotalPorArquivo[b.origemArquivo] || 0;
+    const iof = mensalidadeTotalArquivo > 0 ? iofTotalArquivo * (mensalidade / mensalidadeTotalArquivo) : 0;
+    return { beneficiario: b, titular, ativo, centroCusto, mensalidade, coparticipacaoMes, iof, total: mensalidade + coparticipacaoMes + iof };
+  });
+  // Beneficiários "sem cadastro" (ver coparticipacaoPorBeneficiario): têm coparticipação real mas
+  // nenhuma linha na lista principal, então não entram no .map acima — sem isso, o valor deles
+  // simplesmente sumia do rateio. Entram aqui como linha própria: sem mensalidade/IOF conhecidos
+  // (não têm como saber, sem uma linha real na fatura), só a coparticipação, e centro de custo fixo
+  // se a empresa da fatura bater com uma das 4 SPEs especiais, senão NÃO MAPEADO mesmo.
+  // Por chave (empresa+certificado), não por nome — mesmo motivo do copartPorChave acima: nomes
+  // podem se repetir entre pessoas diferentes, chave não.
+  const chavesJaIncluidas = new Set(beneficiariosValidos.map(b=>(b.empresa||"")+"|"+b.certificado));
+  const orfaos = copart.filter(r => r.beneficiario.semCadastro && !chavesJaIncluidas.has(r.key)).map(r => ({
+    beneficiario: r.beneficiario, titular: r.titular, ativo: null,
+    centroCusto: centroCustoFixoPorEmpresaFatura(r.beneficiario.empresa) || null,
+    mensalidade: 0, coparticipacaoMes: r.total, iof: 0, total: r.total,
+  }));
+  return [...linhasReais, ...orfaos];
+}
+function parcelasEscolhidas(modulo, competencia, nomeNorm){
+  const fatura = state.modulos[modulo].faturas[competencia];
+  const p = fatura && fatura.parcelamentos ? fatura.parcelamentos[nomeNorm] : null;
+  return p && p.parcelas ? p.parcelas : 1; // sem escolha ainda = à vista (1x)
+}
+function definirParcelas(modulo, competencia, nomeNorm, parcelas){
+  const fatura = state.modulos[modulo].faturas[competencia];
+  if(!fatura) return;
+  if(!fatura.parcelamentos) fatura.parcelamentos = {};
+  fatura.parcelamentos[nomeNorm] = {parcelas, definidoEm: new Date().toISOString()};
+  persistFatura(modulo, competencia);
+}
+// Junta, para o mês-alvo, todo mundo com coparticipação ativa naquele mês — seja um valor novo
+// desse mês, seja o resto de um parcelamento iniciado em um mês anterior (soma automática entre competências).
+function coparticipacaoDoMes(modulo, competenciaAlvo){
+  const faturas = state.modulos[modulo].faturas;
+  const linhas = new Map();
+  for(const origem of Object.keys(faturas)){
+    if(origem > competenciaAlvo) continue;
+    const fatura = faturas[origem];
+    for(const r of coparticipacaoPorBeneficiario(fatura)){
+      const parcelas = parcelasEscolhidas(modulo, origem, r.nomeNorm);
+      const ultima = competenciaAddMeses(origem, parcelas-1);
+      if(competenciaAlvo < origem || competenciaAlvo > ultima) continue;
+      const valorParcela = r.total / parcelas;
+      if(!linhas.has(r.nomeNorm)) linhas.set(r.nomeNorm, {nomeNorm:r.nomeNorm, beneficiario:r.beneficiario, titular:r.titular, totalDescontar:0, origens:[]});
+      const linha = linhas.get(r.nomeNorm);
+      linha.totalDescontar += valorParcela;
+      linha.origens.push({competencia:origem, valorTotal:r.total, parcelas, valorParcela, ultima, ehNovo: origem===competenciaAlvo});
+    }
+  }
+  // Quando a planilha de coparticipação já traz um "Acumulado" pra esse mês específico, ele é a
+  // referência (o próprio acompanhamento do usuário) — substitui o total calculado automaticamente,
+  // só pra quem já apareceu na fatura real (não inventa gente nova a partir do acumulado sozinho).
+  const faturaAlvo = faturas[competenciaAlvo];
+  if(faturaAlvo && faturaAlvo.acumulados){
+    for(const [nomeNorm, valor] of Object.entries(faturaAlvo.acumulados)){
+      const linha = linhas.get(nomeNorm);
+      if(!linha) continue;
+      const novo = linha.origens.find(o=>o.ehNovo);
+      linha.acumuladoSaldoAnterior = valor - (novo ? novo.valorParcela : 0); // o resto do total que já vinha de antes
+      linha.totalDescontar = valor;
+      linha.acumuladoDaPlanilha = true;
+    }
+  }
+  // ordem fixa por nome — não reordena quando o valor muda (evita a linha "sumir" de vista ao editar parcelas)
+  return [...linhas.values()].sort((a,b)=> a.beneficiario.nome.localeCompare(b.beneficiario.nome, "pt-BR"));
+}
+function empresasNaFatura(fatura){
+  const set = new Set();
+  for(const b of (fatura.beneficiarios||[])) if(b.empresa) set.add(empresaOuGrupo(b.empresa));
+  for(const b of (fatura.historicoBeneficiarios||[])) if(b.empresa) set.add(empresaOuGrupo(b.empresa));
+  return [...set].sort();
+}
+function historicoBeneficiario(modulo, nomeNorm){
+  return competenciasDisponiveis(modulo).map(c=>{
+    const linha = coparticipacaoDoMes(modulo, c).find(l=>l.nomeNorm===nomeNorm);
+    return {competencia:c, total: linha ? linha.totalDescontar : 0};
+  });
+}
+// Meses além da última fatura importada em que ainda existe parcela em aberto — dá pra ver a
+// projeção de desconto desses meses mesmo sem ter importado a fatura real ainda.
+function competenciasProjetadas(modulo){
+  const faturas = state.modulos[modulo].faturas;
+  const comps = Object.keys(faturas);
+  if(!comps.length) return [];
+  let maxUltima = null;
+  for(const origem of comps){
+    for(const r of coparticipacaoPorBeneficiario(faturas[origem])){
+      const parcelas = parcelasEscolhidas(modulo, origem, r.nomeNorm);
+      const ultima = competenciaAddMeses(origem, parcelas-1);
+      if(!maxUltima || ultima > maxUltima) maxUltima = ultima;
+    }
+  }
+  if(!maxUltima) return [];
+  const ultimoReal = comps.slice().sort().pop();
+  const out = [];
+  for(let c = competenciaAddMeses(ultimoReal,1); c <= maxUltima; c = competenciaAddMeses(c,1)) out.push(c);
+  return out;
+}
+
+/* ---- Importação da planilha histórica de coparticipação (uma aba por mês) ---- */
+const MESES_PT = {JANEIRO:1,FEVEREIRO:2,MARCO:3,ABRIL:4,MAIO:5,JUNHO:6,JULHO:7,AGOSTO:8,SETEMBRO:9,OUTUBRO:10,NOVEMBRO:11,DEZEMBRO:12};
+function competenciaDeNomeAba(nomeAba){
+  const n = normName(nomeAba);
+  const m = /^([A-Z]+)\s+(\d{2,4})$/.exec(n);
+  if(!m) return null;
+  const mes = MESES_PT[m[1]];
+  if(!mes) return null;
+  let ano = m[2];
+  if(ano.length===2) ano = "20"+ano;
+  return `${ano}-${String(mes).padStart(2,"0")}`;
+}
+async function importarHistoricoCoparticipacao(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:"array", cellDates:false});
+  let mesesImportados = 0, linhasImportadas = 0, parcelasAplicadas = 0;
+  const mesesIgnorados = [];
+  const compsAlteradas = new Set();
+  for(const sheetName of wb.SheetNames){
+    const comp = competenciaDeNomeAba(sheetName);
+    if(!comp) continue; // ex.: aba "Metricas"
+    const existente = state.modulos.saude.faturas[comp];
+    const temFaturaReal = existente && existente.eventos;
+    const sheet = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:""});
+    // O layout muda entre abas (meses antigos não têm coluna "Titular" separada, outros têm) —
+    // sempre localiza as colunas pelo cabeçalho (linha 2) em vez de posição fixa.
+    const header = (rows[1] || []).map(String);
+    const cEmpresa = findCol(header, ["Empresa"]);
+    const cBenef = findCol(header, ["Beneficiário","Beneficiario","Nome"]);
+    const cTitular = findCol(header, ["Titular"]);
+    const cValor = findCol(header, ["Valor Total"]);
+    const cParcela = findCol(header, ["Parcela"]);
+    const cAcumulado = findCol(header, ["Acumulado"]);
+    if(cBenef<0 || cValor<0){ mesesIgnorados.push(`${sheetName} (cabeçalho não reconhecido)`); continue; }
+
+    if(temFaturaReal){
+      // Já temos a fatura real (PDF) desse mês — não mexe nos beneficiários/valores, mas ainda
+      // aproveita as escolhas de parcelamento já registradas na planilha pra esse mês, aplicando
+      // em cima dos nomes que já existem na fatura real. A coluna "Acumulado" (quando preenchida)
+      // é o valor de referência do próprio acompanhamento do usuário — vira a base do "total a
+      // descontar" nesse mês específico, tendo prioridade sobre a soma calculada automaticamente.
+      const parcelamentos = existente.parcelamentos || (existente.parcelamentos = {});
+      const acumulados = existente.acumulados || (existente.acumulados = {});
+      let acumuladosLidos = 0, parcelasAplicadasNestaAba = 0;
+      for(let i=2; i<rows.length; i++){
+        const r = rows[i];
+        const nomeBenef = String(r[cBenef]||"").trim();
+        if(!nomeBenef) continue;
+        const nomeNorm = normName(nomeBenef);
+        const parcelaRaw = cParcela>=0 ? r[cParcela] : null;
+        const parcela = typeof parcelaRaw==="number" ? Math.round(parcelaRaw) : parseInt(parcelaRaw,10);
+        if(parcela>1 && parcela<=10 && (!parcelamentos[nomeNorm] || parcelamentos[nomeNorm].origem==="planilha")){
+          parcelamentos[nomeNorm] = {parcelas:parcela, definidoEm:new Date().toISOString(), origem:"planilha"};
+          parcelasAplicadas++; parcelasAplicadasNestaAba++;
+        }
+        const acumuladoRaw = cAcumulado>=0 ? r[cAcumulado] : null;
+        const acumulado = typeof acumuladoRaw==="number" ? acumuladoRaw : parseFloat(acumuladoRaw);
+        if(!isNaN(acumulado) && acumuladoRaw!==""){ acumulados[nomeNorm] = acumulado; acumuladosLidos++; }
+      }
+      mesesIgnorados.push(`${sheetName} (fatura real — parcelas${acumuladosLidos?` e ${acumuladosLidos} acumulado(s)`:""} aplicados)`);
+      if(acumuladosLidos || parcelasAplicadasNestaAba) compsAlteradas.add(comp);
+      continue;
+    }
+
+    const beneficiarios = [];
+    const parcelamentos = (existente && existente.parcelamentos) || {};
+    for(let i=2; i<rows.length; i++){
+      const r = rows[i];
+      const empresa = cEmpresa>=0 ? String(r[cEmpresa]||"").trim() : "";
+      const nomeBenef = String(r[cBenef]||"").trim();
+      const nomeTitular = cTitular>=0 ? String(r[cTitular]||"").trim() : "";
+      const valorTotal = typeof r[cValor]==="number" ? r[cValor] : parseFloat(r[cValor]) || 0;
+      const parcelaRaw = cParcela>=0 ? r[cParcela] : null;
+      const parcela = typeof parcelaRaw==="number" ? Math.round(parcelaRaw) : parseInt(parcelaRaw,10);
+      if(!nomeBenef || !valorTotal) continue;
+      const nomeNorm = normName(nomeBenef);
+      beneficiarios.push({nome:nomeBenef, nomeNorm, empresa, valorTotal, parentesco: nomeTitular?"OUTR":"", titularNome: nomeTitular||null});
+      if(parcela && parcela>1 && parcela<=10 && (!parcelamentos[nomeNorm] || parcelamentos[nomeNorm].origem==="planilha")){
+        parcelamentos[nomeNorm] = {parcelas:parcela, definidoEm:new Date().toISOString(), origem:"planilha"};
+      }
+    }
+    if(!beneficiarios.length) continue;
+    state.modulos.saude.faturas[comp] = {
+      competencia: comp, importadoEm: new Date().toISOString(), arquivo: `${file.name} (aba "${sheetName}")`,
+      historicoBeneficiarios: beneficiarios, parcelamentos,
+    };
+    compsAlteradas.add(comp);
+    mesesImportados++; linhasImportadas += beneficiarios.length;
+  }
+  compsAlteradas.forEach(comp => persistFatura("saude", comp));
+  return {mesesImportados, linhasImportadas, mesesIgnorados, parcelasAplicadas};
+}
+
+/* ============================================================
+   ÍCONES (inline, mínimos)
+============================================================ */
+const ICONS = {
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="9.5" cy="7.5" r="3.5"/><path d="M17 8.5a3 3 0 1 0 0-6"/><path d="M20 19v-1.5a3.5 3.5 0 0 0-2.5-3.36"/></svg>',
+  heart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20s-7-4.35-9.5-9C.8 7.3 3 4 6.5 4c2 0 3.4 1.1 4 2 .6-.9 2-2 4-2C18 4 20.2 7.3 18.5 11 16 15.65 9 20 9 20"/><path d="M8 12h2l1.5-2.5L13 14l1.5-2H16"/></svg>',
+  tooth:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c-2.2 0-3.4 1.2-4.6 1.2C5.8 4.2 4 5.6 4 8.2c0 2 .8 3 1.1 5 .3 2.1.9 6.5 2.6 6.5 1.5 0 1.3-3.2 2.1-4.9.4-.9.9-1.3 2.2-1.3s1.8.4 2.2 1.3c.8 1.7.6 4.9 2.1 4.9 1.7 0 2.3-4.4 2.6-6.5.3-2 1.1-3 1.1-5 0-2.6-1.8-4-3.4-4-1.2 0-2.4-1.2-4.6-1.2Z"/></svg>',
+  upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V4"/><path d="M7 9l5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
+  alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4"/><circle cx="12" cy="16.2" r=".3" fill="currentColor"/><path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>',
+  coin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5c0-1.1 1.2-2 2.7-2 1.6 0 2.8.9 2.8 2s-1.2 1.8-2.8 2c-1.5.2-2.7.8-2.7 2s1.2 2 2.8 2c1.5 0 2.7-.9 2.7-2"/></svg>',
+  file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3v5a1 1 0 0 0 1 1h5"/><path d="M6 3h8l6 6v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/></svg>',
+  history:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>',
+  download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
+};
+
+/* ============================================================
+   RENDER — NAV
+============================================================ */
+let activeView = "saude";
+function setActive(v){ activeView = v; render(); }
+
+function renderNav(){
+  const nav = document.getElementById("nav");
+  const items = [
+    {id:"saude", label:"Saúde", icon:ICONS.heart, count:null},
+    {id:"odonto", label:"Odonto", icon:ICONS.tooth, count:null},
+    {id:"ativos", label:"Cadastro de ativos", icon:ICONS.users, count: ativosParaCompetencia().ativos.length || null},
+  ];
+  nav.innerHTML = items.map(it=>{
+    const fa = it.id!=="ativos" ? faturaAtual(it.id) : null;
+    const an = fa ? analisarTitulares(fa) : null;
+    const pendentes = an ? an.desligados.length + an.pendentes.length + an.divergenciasEmpresa.length : 0;
+    return `<button data-v="${it.id}" class="${activeView===it.id?'active':''}">${it.icon}<span>${it.label}</span>${pendentes?`<span class="dot">${pendentes}</span>`:''}</button>`;
+  }).join("");
+  [...nav.querySelectorAll("button")].forEach(b=> b.onclick = ()=> setActive(b.dataset.v));
+}
+
+/* ============================================================
+   RENDER — VIEW: ATIVOS
+============================================================ */
+function renderAtivosCompTabs(comps, sel){
+  if(comps.length<=1) return "";
+  return `
+  <div class="comp-tabs">
+    ${comps.slice().reverse().map(c=>`<button class="comp-tab ${c===sel?'active':''}" data-ativos-comp="${c}">${mesLabelCurto(c)}</button>`).join("")}
+  </div>`;
+}
+function renderAtivos(){
+  const comps = competenciasAtivos();
+  const sel = (state["_selAtivosComp"] && comps.includes(state["_selAtivosComp"])) ? state["_selAtivosComp"] : comps[comps.length-1];
+  const snap = sel ? state.ativosPorCompetencia[sel] : null;
+  const ativos = snap ? snap.ativos : [];
+  const byEmpresa = {};
+  for(const a of ativos){
+    const k = a.empresaNome || "—";
+    byEmpresa[k] = (byEmpresa[k]||0)+1;
+  }
+  const rowsEmpresa = Object.entries(byEmpresa).sort((a,b)=>b[1]-a[1]);
+  return `
+  <div class="view-head">
+    <div>
+      <h2>Cadastro de funcionários ativos</h2>
+      <p>Base usada para identificar quem, na fatura do plano, já não está mais ativo na empresa — por competência: cada fatura cruza com o cadastro que valia naquele mês, não sempre o import mais recente. Importe todo mês pra manter completo.</p>
+    </div>
+    <div class="head-actions">
+      <label class="uploader" style="padding:9px 14px;gap:8px;border-radius:10px" for="fileAtivos">
+        ${ICONS.upload}<span style="font-size:13px;font-weight:600">Importar planilha (Alterdata)</span>
+      </label>
+      <input type="file" id="fileAtivos" accept=".xls,.xlsx">
+    </div>
+  </div>
+  ${comps.length ? `
+    ${renderAtivosCompTabs(comps, sel)}
+    <div class="tiles">
+      <div class="tile"><div class="tlabel">Funcionários ativos</div><div class="tval tabular">${ativos.length}</div><div class="tsub">${snap.arquivo||""}</div></div>
+      <div class="tile"><div class="tlabel">Empresas</div><div class="tval tabular">${rowsEmpresa.length}</div></div>
+      <div class="tile"><div class="tlabel">Competência</div><div class="tval" style="font-size:15px">${fmtCompetencia(sel)}</div><div class="tsub">${new Date(snap.importadoEm).toLocaleDateString("pt-BR")}</div></div>
+    </div>
+    <div class="panel">
+      <h3>Funcionários por empresa</h3>
+      <p class="phint">Contagem do cadastro de ${fmtCompetencia(sel)}.</p>
+      <div class="twrap"><table><thead><tr><th>Empresa</th><th class="num">Ativos</th></tr></thead><tbody>
+        ${rowsEmpresa.map(([k,v])=>`<tr><td>${k}</td><td class="num tabular">${v}</td></tr>`).join("")}
+      </tbody></table></div>
+    </div>
+    ${renderSubfaturasPanel()}
+    ${renderCentroCustoPanel()}
+    ${renderResolucoesPanel()}
+    ${renderEmpresaIgnoradasPanel()}
+  ` : `
+    <div class="empty-state panel">
+      <div class="es-icon">${ICONS.users}</div>
+      <h4>Nenhum cadastro importado ainda</h4>
+      <p>Importe a planilha de funcionários ativos (mesmo formato usado nas outras ferramentas de DP) para habilitar a checagem de desligados nos módulos Saúde e Odonto.</p>
+    </div>
+  `}
+  `;
+}
+function renderSubfaturasPanel(){
+  const entradas = Object.entries(state.subfaturasPorCodigo);
+  return `
+  <div class="panel">
+    <div class="panel-head">
+      <div class="ph-text"><h3>Mapa de subfaturas</h3><p>Liga o código da empresa (Alterdata) ao número/nome da subfatura na Bradesco — usado para detectar "empresa divergente" com precisão, em vez de comparar nomes por semelhança.</p></div>
+      <label class="btn ghost" for="fileSubfaturas" style="white-space:nowrap">${ICONS.upload}${entradas.length?"Atualizar mapa":"Importar mapa"}</label>
+      <input type="file" id="fileSubfaturas" accept=".xls,.xlsx">
+    </div>
+    ${entradas.length ? `
+    <p class="phint" style="margin-bottom:12px">${entradas.length} empresas mapeadas · ${state.subfaturasArquivo||""} · ${state.subfaturasImportadoEm ? new Date(state.subfaturasImportadoEm).toLocaleDateString("pt-BR") : ""}</p>
+    <div class="twrap"><table><thead><tr><th>Código</th><th>Empresa</th><th>Subfatura</th></tr></thead><tbody>
+      ${entradas.map(([cod,s])=>`<tr><td class="tabular muted">${cod}</td><td>${s.empresaNome||"—"}</td><td class="tabular">${s.codigoSubfatura} - ${s.nomeSubfatura}</td></tr>`).join("")}
+    </tbody></table></div>
+    ` : `<div class="empty">Nenhum mapa importado ainda — a checagem de empresa divergente usa comparação por nome (menos precisa) até isso ser importado.</div>`}
+  </div>`;
+}
+function renderCentroCustoPanel(){
+  const mapa = state.centroCustoMapa || {};
+  const entradas = Object.entries(mapa);
+  return `
+  <div class="panel">
+    <div class="panel-head">
+      <div class="ph-text"><h3>Mapa de centro de custo (empresa + departamento)</h3><p>Liga cada empresa+departamento do funcionário ao centro de custo contábil, usado pra ratear a exportação de "Todos os beneficiários". Fonte: planilha dedicada "Centro de Custo - Plano de Saúde", já com o centro de custo próprio de cada empresa do grupo.</p></div>
+      <label class="btn ghost" for="fileCentroCusto" style="white-space:nowrap">${ICONS.upload}${entradas.length?"Atualizar mapa":"Importar mapa"}</label>
+      <input type="file" id="fileCentroCusto" accept=".xls,.xlsx">
+    </div>
+    ${entradas.length ? `
+    <p class="phint" style="margin-bottom:0">${entradas.length} combinações empresa+departamento mapeadas · ${state.centroCustoArquivo||""} · ${state.centroCustoImportadoEm ? new Date(state.centroCustoImportadoEm).toLocaleDateString("pt-BR") : ""}</p>
+    ` : `<div class="empty">Nenhum mapa importado ainda — a exportação de beneficiários sai sem centro de custo (coluna "NÃO MAPEADO") até isso ser importado.</div>`}
+  </div>`;
+}
+function resolucaoLabel(r){
+  if(r.status === "mesmo") return {cls:"ok", texto:"Mesmo que "+titleCase(r.ativoNome||"")};
+  if(r.status === "naoClt") return {cls:"warn", texto:"Não é CLT (diretor/sócio) — mantém no plano"};
+  return {cls:"danger", texto:"Desligado"};
+}
+function renderResolucoesPanel(){
+  const entries = Object.entries(state.nomeResolucoes);
+  if(!entries.length) return "";
+  entries.sort((a,b)=> new Date(b[1].resolvidoEm) - new Date(a[1].resolvidoEm));
+  return `
+  <div class="panel">
+    <div class="panel-head"><div class="ph-text"><h3>Correspondências de nome já confirmadas</h3><p>Decisões tomadas nas divergências de grafia entre a fatura e o cadastro — aplicadas automaticamente nas próximas importações.</p></div></div>
+    <div class="twrap"><table><thead><tr><th>Nome na fatura</th><th>Decisão</th><th>Confirmado em</th><th></th></tr></thead><tbody>
+      ${entries.map(([nomeNorm, r])=>{ const lb = resolucaoLabel(r); return `<tr>
+        <td>${titleCase(nomeNorm)}</td>
+        <td><span class="pill ${lb.cls}">${lb.texto}</span></td>
+        <td class="muted tabular">${new Date(r.resolvidoEm).toLocaleDateString("pt-BR")}</td>
+        <td><button class="btn ghost" data-undo-resolve="${encodeURIComponent(nomeNorm)}">Desfazer</button></td>
+      </tr>`; }).join("")}
+    </tbody></table></div>
+  </div>`;
+}
+
+function renderEmpresaIgnoradasPanel(){
+  const entries = Object.entries(state.empresaIgnoradas);
+  if(!entries.length) return "";
+  entries.sort((a,b)=> new Date(b[1].ignoradoEm) - new Date(a[1].ignoradoEm));
+  return `
+  <div class="panel">
+    <div class="panel-head"><div class="ph-text"><h3>Divergências de empresa marcadas como cientes</h3><p>Titulares cuja empresa na fatura difere do cadastro, mas já foram revisados e não devem alertar de novo.</p></div></div>
+    <div class="twrap"><table><thead><tr><th>Nome</th><th>Marcado em</th><th></th></tr></thead><tbody>
+      ${entries.map(([nomeNorm, r])=>`<tr>
+        <td>${titleCase(nomeNorm)}</td>
+        <td class="muted tabular">${new Date(r.ignoradoEm).toLocaleDateString("pt-BR")}</td>
+        <td><button class="btn ghost" data-undo-empresa="${encodeURIComponent(nomeNorm)}">Desfazer</button></td>
+      </tr>`).join("")}
+    </tbody></table></div>
+  </div>`;
+}
+
+/* ============================================================
+   RENDER — VIEW: MÓDULO (Saúde / Odonto)
+============================================================ */
+function renderCompTabs(modulo, todasComps, sel){
+  if(todasComps.length<=1) return "";
+  return `
+  <div class="comp-tabs">
+    ${todasComps.slice().reverse().map(c=>{
+      const projetada = !state.modulos[modulo].faturas[c];
+      return `<button class="comp-tab ${c===sel?'active':''} ${projetada?'projetado':''}" data-comp="${c}" data-modulo="${modulo}" title="${projetada?'Projeção — só parcelas em aberto, nenhuma fatura importada ainda':''}">${mesLabelCurto(c)}</button>`;
+    }).join("")}
+  </div>`;
+}
+function renderCoparticipacaoPanel(modulo, sel, copart){
+  return `
+  <div class="panel">
+    <div class="panel-head">
+      <div class="ph-text"><h3>Coparticipação por beneficiário (base para desconto em folha)</h3><p>Um beneficiário acima de R$ 100,00 pode parcelar (escolha do funcionário, até o teto da tabela) — o valor de parcelamentos ainda em aberto de meses anteriores é somado automaticamente ao total deste mês.</p></div>
+      <label class="btn ghost" for="fileHistorico" style="white-space:nowrap">${ICONS.upload}Importar planilha histórica</label>
+      <input type="file" id="fileHistorico" accept=".xlsx,.xls">
+    </div>
+    ${copart.length ? `
+    <div class="twrap"><table><thead><tr><th>Beneficiário</th><th>Vínculo</th><th class="num">Valor novo (${mesLabelCurto(sel)})</th><th>Parcelas</th><th class="num">Valor da parcela</th><th class="num">Total a descontar</th><th></th></tr></thead><tbody>
+      ${copart.map(r=>{
+        const novo = r.origens.find(o=>o.ehNovo);
+        const outras = r.origens.filter(o=>!o.ehNovo);
+        const faixa = novo ? faixaParcelamento(novo.valorTotal) : null;
+        return `<tr>
+        <td>${titleCase(r.beneficiario.nome)}</td>
+        <td>
+          <span class="pill ${r.beneficiario.parentesco?'dep':'titular'}">${r.beneficiario.parentesco?depLabel(r.beneficiario.parentesco):'Titular'}</span>
+          ${r.beneficiario.parentesco && r.titular ? `<div class="muted" style="font-size:11px;margin-top:3px">titular: ${titleCase(r.titular.nome)}</div>` : ""}
+        </td>
+        <td class="num tabular">${novo ? fmtBRL(novo.valorTotal) : "—"}</td>
+        <td>${novo ? `
+          <input type="number" class="input-parcelas" min="1" max="${faixa.max}" value="${novo.parcelas}"
+            data-parcelas-nome="${encodeURIComponent(r.nomeNorm)}" data-parcelas-comp="${novo.competencia}" data-parcelas-modulo="${modulo}"
+            style="width:56px;text-align:center">
+          <div class="muted" style="font-size:10.5px;margin-top:2px">${faixa.label}</div>
+        ` : `<span class="muted">—</span>`}</td>
+        <td class="num tabular">${novo ? fmtBRL(novo.valorParcela) : "—"}</td>
+        <td class="num tabular" style="color:var(--warn);font-weight:600">
+          ${fmtBRL(r.totalDescontar)}
+          ${r.acumuladoDaPlanilha
+            ? `<div class="muted" style="font-size:10.5px;font-weight:400">acumulado da planilha${novo && r.acumuladoSaldoAnterior>0.005 ? ` (parcela de ${mesLabelCurto(sel)}: ${fmtBRL(novo.valorParcela)} + saldo anterior: ${fmtBRL(r.acumuladoSaldoAnterior)})` : ""}</div>`
+            : (outras.length ? `<div class="muted" style="font-size:10.5px;font-weight:400">${outras.map(o=>`+ ${fmtBRL(o.valorParcela)} (${mesLabelCurto(o.competencia)}, parcela até ${mesLabelCurto(o.ultima)})`).join("<br>")}</div>` : "")}
+        </td>
+        <td><button class="btn ghost" data-hist="${encodeURIComponent(r.nomeNorm)}">${ICONS.history}Histórico</button></td>
+      </tr>`;}).join("")}
+    </tbody></table></div>
+    ` : `<div class="empty">Nenhuma coparticipação ativa neste mês.</div>`}
+  </div>`;
+}
+function renderModulo(modulo){
+  const isHealth = modulo === "saude";
+  const label = isHealth ? "Saúde" : "Odonto";
+  const compsReais = competenciasDisponiveis(modulo);
+  const compsProjetadas = isHealth ? competenciasProjetadas(modulo) : [];
+  const todasComps = [...compsReais, ...compsProjetadas];
+  const sel = state["_sel_"+modulo] || compsReais[compsReais.length-1] || compsProjetadas[0] || null;
+  const fatura = sel ? state.modulos[modulo].faturas[sel] : null;
+
+  const uploader = `
+    <label class="uploader" for="fileFatura_${modulo}">
+      <div class="uicon">${ICONS.upload}</div>
+      <div class="ux"><strong>Importar fatura de ${label} (PDF)</strong><span>Fatura técnica Bradesco — pode selecionar vários meses de uma vez, o mês de cada um é detectado automaticamente. Leitura feita no navegador, nada é enviado a servidores.</span></div>
+    </label>
+    <input type="file" id="fileFatura_${modulo}" accept="application/pdf" multiple>
+  `;
+
+  if(!todasComps.length){
+    return `
+    <div class="view-head">
+      <div><h2>${label}</h2><p>Importe a fatura mensal em PDF para ver beneficiários${isHealth?', coparticipação':''} e possíveis desligados ainda no plano.</p></div>
+    </div>
+    <div class="empty-state panel">
+      <div class="es-icon">${isHealth?ICONS.heart:ICONS.tooth}</div>
+      <h4>Nenhuma fatura de ${label.toLowerCase()} importada</h4>
+      <div style="max-width:420px;margin:0 auto 4px">${uploader}</div>
+    </div>`;
+  }
+
+  if(!fatura){
+    // competência projetada: sem fatura real pra esse mês, só mostra as parcelas de meses anteriores ainda em aberto
+    const copart = isHealth ? coparticipacaoDoMes(modulo, sel) : [];
+    return `
+    ${renderCompTabs(modulo, todasComps, sel)}
+    <div class="view-head">
+      <div><h2>${label}</h2><p>Projeção de ${fmtCompetencia(sel)} — nenhuma fatura importada ainda para este mês. Os valores abaixo são só das parcelas de coparticipação de meses anteriores que ainda continuam em aberto.</p></div>
+      <div class="head-actions">
+        <label class="btn" for="fileFatura_${modulo}">${ICONS.upload}Importar fatura deste mês</label>
+        <input type="file" id="fileFatura_${modulo}" accept="application/pdf" multiple>
+      </div>
+    </div>
+    ${isHealth ? renderCoparticipacaoPanel(modulo, sel, copart) : ""}
+    `;
+  }
+
+  if(!fatura.eventos){
+    // competência vinda da planilha histórica (sem PDF real) — só dá pra mostrar a coparticipação
+    const copart = coparticipacaoDoMes(modulo, sel);
+    return `
+    ${renderCompTabs(modulo, todasComps, sel)}
+    <div class="view-head">
+      <div><h2>${label}</h2><p>Dados de ${fmtCompetencia(sel)} importados da planilha histórica — sem o PDF da fatura desse mês não dá pra conferir desligados, divergências de empresa ou a lista completa de beneficiários.</p></div>
+      <div class="head-actions">
+        <label class="btn" for="fileFatura_${modulo}">${ICONS.upload}Importar fatura real deste mês</label>
+        <input type="file" id="fileFatura_${modulo}" accept="application/pdf" multiple>
+      </div>
+    </div>
+    ${renderCoparticipacaoPanel(modulo, sel, copart)}
+    `;
+  }
+
+  const analise = analisarTitulares(fatura);
+  const desl = analise.desligados;
+  const pendentes = analise.pendentes;
+  const divEmpresa = analise.divergenciasEmpresa;
+  const titulares = titularesDaFatura(fatura);
+  const copart = isHealth ? coparticipacaoDoMes(modulo, sel) : [];
+  const valorLiquidoMap = valorLiquidoPorCertificado(fatura);
+
+  const empresasDisp = empresasNaFatura(fatura);
+  const filtro = state["_filtroEmpresa_"+modulo] || "";
+  const passaFiltro = empresa => !filtro || empresaOuGrupo(empresa) === filtro;
+  const deslF = desl.filter(d=>passaFiltro(d.empresa));
+  const pendentesF = pendentes.filter(p=>passaFiltro(p.titular.empresa));
+  const divEmpresaF = divEmpresa.filter(d=>passaFiltro(d.titular.empresa));
+  const titularesF = titulares.filter(t=>passaFiltro(t.empresa));
+  const copartF = copart.filter(r=>passaFiltro(r.beneficiario.empresa));
+  const beneficiariosF = fatura.beneficiarios.filter(b=>!b.ajusteOnly && passaFiltro(b.empresa));
+  const totalCopart = copartF.reduce((s,r)=>s+r.totalDescontar,0);
+  const totalEventosF = fatura.eventos.filter(e=>passaFiltro(e.empresa)).length;
+
+  return `
+  ${renderCompTabs(modulo, todasComps, sel)}
+  <div class="view-head">
+    <div>
+      <h2>${label}</h2>
+      <p>Fatura ${fmtCompetencia(fatura.competencia)} · ${(fatura.arquivos||[]).length} arquivo(s): ${(fatura.arquivos||[]).map(a=>a.nome).join(", ")||"—"}</p>
+    </div>
+    <div class="head-actions">
+      ${empresasDisp.length>1 ? `<select id="filtroEmpresa_${modulo}"><option value="">Todas as empresas</option>${empresasDisp.map(e=>`<option value="${e}" ${e===filtro?'selected':''}>${e}</option>`).join("")}</select>` : ""}
+      <label class="btn" for="fileFatura_${modulo}">${ICONS.upload}Importar nova fatura</label>
+      <input type="file" id="fileFatura_${modulo}" accept="application/pdf" multiple>
+    </div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="tlabel">Titulares na fatura</div><div class="tval tabular">${titularesF.length}</div></div>
+    <div class="tile"><div class="tlabel">Beneficiários totais</div><div class="tval tabular">${beneficiariosF.length}</div><div class="tsub">titulares + dependentes</div></div>
+    <div class="tile ${pendentesF.length?'warn':''}"><div class="tlabel">Nomes a confirmar</div><div class="tval tabular">${pendentesF.length}</div><div class="tsub">grafia parecida no cadastro</div></div>
+    <div class="tile ${divEmpresaF.length?'warn':''}"><div class="tlabel">Empresa divergente</div><div class="tval tabular">${divEmpresaF.length}</div><div class="tsub">fatura ≠ cadastro</div></div>
+    <div class="tile ${deslF.length?'danger':'ok'}"><div class="tlabel">Desligados ainda no plano</div><div class="tval tabular">${deslF.length}</div></div>
+    ${isHealth ? `<div class="tile warn"><div class="tlabel">Coparticipação do mês</div><div class="tval tabular">${fmtBRL(totalCopart)}</div><div class="tsub">${totalEventosF} evento(s)</div></div>` : ""}
+  </div>
+
+  ${pendentesF.length ? `
+  <div class="panel">
+    <div class="panel-head">
+      <div class="ph-text">
+        <h3>${ICONS.alert.replace('viewBox="0 0 24 24"','viewBox="0 0 24 24" style="width:15px;height:15px;vertical-align:-2px;margin-right:4px;color:var(--warn)"')}Nomes parecidos a confirmar</h3>
+        <p>Não achei o nome exato do titular no cadastro de ativos, mas há um nome bem parecido — pode ser a mesma pessoa grafada diferente (nome do meio, abreviação, acento). Confirme cada um.</p>
+      </div>
+    </div>
+    <div class="twrap"><table><thead><tr><th>Nome na fatura</th><th>Nome parecido no cadastro</th><th class="num">Parecença</th><th>Empresa (subfatura)</th><th></th></tr></thead><tbody>
+      ${pendentesF.map(p=>`<tr>
+        <td>${titleCase(p.titular.nome)}</td>
+        <td class="muted">${titleCase(p.sugestao.nome)} <span class="muted">— ${p.sugestao.empresaNome||""}</span></td>
+        <td class="num tabular">${Math.round(p.score*100)}%</td>
+        <td class="muted">${p.titular.empresa||"—"}</td>
+        <td style="display:flex;gap:6px;white-space:nowrap;flex-wrap:wrap">
+          <button class="btn ghost" data-resolve="mesmo" data-nome="${encodeURIComponent(p.titular.nomeNorm)}" data-ativo="${encodeURIComponent(p.sugestao.nome)}">É o mesmo</button>
+          <button class="btn ghost" data-resolve="naoClt" data-nome="${encodeURIComponent(p.titular.nomeNorm)}">Não é CLT</button>
+          <button class="btn ghost" data-resolve="diferente" data-nome="${encodeURIComponent(p.titular.nomeNorm)}">É desligado</button>
+        </td>
+      </tr>`).join("")}
+    </tbody></table></div>
+  </div>` : ""}
+
+  ${divEmpresaF.length ? `
+  <div class="panel">
+    <div class="panel-head">
+      <div class="ph-text">
+        <h3>${ICONS.alert.replace('viewBox="0 0 24 24"','viewBox="0 0 24 24" style="width:15px;height:15px;vertical-align:-2px;margin-right:4px;color:var(--warn)"')}Funcionário na fatura de outra empresa</h3>
+        <p>O titular está no plano, mas na subfatura de uma empresa diferente da que consta hoje no cadastro de ativos — provável transferência entre empresas do grupo sem atualizar o plano.</p>
+      </div>
+    </div>
+    <div class="twrap"><table><thead><tr><th>Titular</th><th>Empresa na fatura</th><th>Empresa no cadastro</th><th></th></tr></thead><tbody>
+      ${divEmpresaF.map(d=>`<tr>
+        <td>${titleCase(d.titular.nome)}</td>
+        <td class="muted">${d.titular.empresa||"—"}</td>
+        <td class="muted">${d.empresaEsperada||d.ativo.empresaNome||"—"}</td>
+        <td><button class="btn ghost" data-empresa-ciente="${encodeURIComponent(d.titular.nomeNorm)}">Ciente</button></td>
+      </tr>`).join("")}
+    </tbody></table></div>
+  </div>` : ""}
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="ph-text">
+        <h3>${ICONS.alert.replace('viewBox="0 0 24 24"','viewBox="0 0 24 24" style="width:15px;height:15px;vertical-align:-2px;margin-right:4px;color:var(--danger)"')}Funcionários desligados ainda no plano</h3>
+        <p>Titulares que aparecem na fatura mas não estão na lista de ativos importada (sem nenhum nome parecido no cadastro, ou já confirmados como desligados). "Valor líquido no mês" já soma os estornos/cancelamentos retroativos (linhas CM/CR) — quando fica zero ou negativo, a operadora já está estornando os meses cobrados, ou seja, o cancelamento já está em processamento; um valor positivo é o caso realmente pendente. Não vale pra diretor/sócio/pro-labore, que não entra no export de CLT.</p>
+      </div>
+    </div>
+    ${deslF.length ? `
+    <div class="twrap"><table><thead><tr><th>Titular</th><th>Empresa (subfatura)</th><th>Certificado</th><th>Início no plano</th><th class="num">Valor líquido no mês</th><th>Situação</th><th></th></tr></thead><tbody>
+      ${deslF.map(d=>{
+        const liquido = valorLiquidoMap.get((d.empresa||"")+"|"+d.certificado) ?? d.valor;
+        const cancelamentoEmAndamento = liquido <= 0.005 && liquido !== d.valor;
+        return `<tr>
+        <td>${titleCase(d.nome)}</td>
+        <td class="muted">${d.empresa||"—"}</td>
+        <td class="tabular muted">${d.certificado}</td>
+        <td class="tabular">${fmtDateISO(d.dataInicio)}</td>
+        <td class="num tabular" style="${liquido<0?'color:var(--ok)':''}">${fmtBRL(liquido)}</td>
+        <td>${cancelamentoEmAndamento ? `<span class="pill ok">Cancelamento em processamento</span>` : `<span class="pill danger">Pendente</span>`}</td>
+        <td><button class="btn ghost" data-resolve="naoClt" data-nome="${encodeURIComponent(d.nomeNorm)}">Não é CLT (diretor/sócio)</button></td>
+      </tr>`;}).join("")}
+    </tbody></table></div>
+    ` : `<div class="empty">Nenhum desligado encontrado nesta fatura.</div>`}
+  </div>
+
+  ${isHealth ? renderCoparticipacaoPanel(modulo, sel, copartF) : `
+  <div class="panel">
+    <h3>Beneficiários</h3>
+    <p class="phint">O odontológico é cobrado em valor fixo por beneficiário — esta fatura não trouxe eventos de coparticipação por procedimento.</p>
+  </div>
+  `}
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="ph-text"><h3>Todos os beneficiários</h3><p>${titularesF.length} titulares na fatura de ${fmtCompetencia(fatura.competencia)}${filtro?` — filtrado por ${filtro}`:""}.</p></div>
+      <button class="btn ghost" id="btnExportBenef" style="white-space:nowrap">${ICONS.download}Extrair em Excel</button>
+    </div>
+    <div class="twrap"><table><thead><tr><th>Nome</th><th>Vínculo</th><th>Empresa</th><th>Plano</th><th class="num">Valor</th></tr></thead><tbody>
+      ${beneficiariosF.slice(0,400).map(b=>`<tr>
+        <td>${titleCase(b.nome)}</td>
+        <td><span class="pill ${b.parentesco?'dep':'titular'}">${b.parentesco?depLabel(b.parentesco):'Titular'}</span></td>
+        <td class="muted">${b.empresa||"—"}</td>
+        <td class="tabular muted">${b.plano||"—"}</td>
+        <td class="num tabular">${fmtBRL(b.valor)}</td>
+      </tr>`).join("")}
+    </tbody></table></div>
+    ${beneficiariosF.length>400 ? `<p class="phint" style="margin-top:10px">Mostrando os primeiros 400 registros.</p>` : ""}
+  </div>
+  `;
+}
+function depLabel(p){ return {CONJ:"Cônjuge",FILH:"Filho(a)",OUTR:"Outro"}[p] || p; }
+
+/* ============================================================
+   EXPORTAÇÃO — Excel (mesmo padrão visual "pretty export" já
+   usado no Apontamento Diário/HHT/Vale-Transporte)
+============================================================ */
+const EXPORT_NAVY = "FF16232E", EXPORT_TEAL = "FF5FB4AE", EXPORT_HEADER_FILL = "FFEEF1F2",
+    EXPORT_HEADER_TEXT = "FF24384A", EXPORT_SUBTITLE_TEXT = "FF6B7378", EXPORT_BODY_TEXT = "FF2A2A2A",
+    EXPORT_ZEBRA = "FFF6F7F7", EXPORT_TOTALS_FILL = "FFE7F3F1", EXPORT_FONT = "Aptos";
+async function saveFile(filename, blob){
+  let downloads = null;
+  try{ if(window.claude && window.claude.use) downloads = await window.claude.use("downloads"); }catch(e){ downloads = null; }
+  if(downloads){
+    try{ await downloads.save({filename, data:blob}); return; }
+    catch(e){ if(e && e.code==="declined") return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+function periodoLabel(){ return new Date().toLocaleDateString("pt-BR"); }
+function buildExportHeader(ws, titulo, subtitulo, infoLine, lastCol){
+  ws.views = [{showGridLines:false}];
+  ws.getRow(1).height = 6;
+  ws.mergeCells(2, 2, 2, lastCol);
+  const t = ws.getCell(2,2);
+  t.value = titulo;
+  t.font = {name:EXPORT_FONT, size:16, bold:true, color:{argb:EXPORT_NAVY}};
+  ws.getRow(2).height = 24;
+  ws.mergeCells(3, 2, 3, lastCol);
+  const s = ws.getCell(3,2);
+  s.value = subtitulo;
+  s.font = {name:EXPORT_FONT, size:9.5, color:{argb:EXPORT_SUBTITLE_TEXT}};
+  ws.getRow(4).height = 6;
+  ws.getRow(5).height = 6;
+  ws.getRow(6).height = 22;
+  for(let c=1;c<=lastCol;c++){
+    ws.getCell(6,c).fill = {type:"pattern", pattern:"solid", fgColor:{argb:EXPORT_NAVY}};
+  }
+  ws.mergeCells(6, 2, 6, lastCol);
+  const band = ws.getCell(6,2);
+  band.value = infoLine;
+  band.font = {name:EXPORT_FONT, size:11, bold:true, color:{argb:"FFFFFFFF"}};
+  band.alignment = {vertical:"middle", indent:1};
+  return 7;
+}
+function styleExportHeaderRow(ws, rowIdx, firstCol, lastCol){
+  ws.getRow(rowIdx).height = 20;
+  for(let c=firstCol;c<=lastCol;c++){
+    const cell = ws.getCell(rowIdx,c);
+    cell.fill = {type:"pattern", pattern:"solid", fgColor:{argb:EXPORT_HEADER_FILL}};
+    cell.font = {name:EXPORT_FONT, size:9.5, bold:true, color:{argb:EXPORT_HEADER_TEXT}};
+    cell.alignment = {vertical:"middle", horizontal:"center"};
+    cell.border = {bottom:{style:"thin", color:{argb:EXPORT_TEAL}}};
+  }
+}
+function styleExportDataRow(ws, rowIdx, firstCol, lastCol, zebra){
+  for(let c=firstCol;c<=lastCol;c++){
+    const cell = ws.getCell(rowIdx,c);
+    cell.font = {name:EXPORT_FONT, size:10, color:{argb:EXPORT_BODY_TEXT}};
+    if(zebra) cell.fill = {type:"pattern", pattern:"solid", fgColor:{argb:EXPORT_ZEBRA}};
+    cell.border = {top:{style:"hair", color:{argb:"FFE1E4E6"}}, bottom:{style:"hair", color:{argb:"FFE1E4E6"}}};
+  }
+}
+function styleExportTotalsRow(ws, rowIdx, firstCol, lastCol){
+  for(let c=firstCol;c<=lastCol;c++){
+    const cell = ws.getCell(rowIdx,c);
+    cell.font = {name:EXPORT_FONT, size:10, bold:true, color:{argb:EXPORT_NAVY}};
+    cell.fill = {type:"pattern", pattern:"solid", fgColor:{argb:EXPORT_TOTALS_FILL}};
+    cell.border = {top:{style:"thin", color:{argb:EXPORT_TEAL}}};
+  }
+}
+function montarSheetBeneficiarios(wb, modulo, competencia, sheetName, centrosDisponiveis){
+  const fatura = competencia ? state.modulos[modulo].faturas[competencia] : null;
+  if(!fatura || !fatura.beneficiarios) return null;
+  const label = modulo === "saude" ? "Saúde" : "Odonto";
+  const filtro = state["_filtroEmpresa_"+modulo] || "";
+  const linhas = rateioBeneficiarios(modulo, competencia)
+    .filter(l => !filtro || empresaOuGrupo(l.beneficiario.empresa) === filtro)
+    .sort((a,b)=>{
+      // ordem alfabética pelo TITULAR (não pelo nome da própria linha), com o titular sempre antes
+      // dos seus dependentes dentro do mesmo grupo — pedido explícito do usuário.
+      const cmpTitular = a.titular.nome.localeCompare(b.titular.nome, "pt-BR");
+      if(cmpTitular !== 0) return cmpTitular;
+      const aEhTitular = !a.beneficiario.parentesco, bEhTitular = !b.beneficiario.parentesco;
+      if(aEhTitular !== bEhTitular) return aEhTitular ? -1 : 1;
+      return a.beneficiario.nome.localeCompare(b.beneficiario.nome, "pt-BR");
+    });
+  if(!linhas.length) return null;
+
+  const ws = wb.addWorksheet(sheetName);
+  const sel = competencia;
+  const cols = ["Nome","Vínculo","Empresa (subfatura)","Departamento (titular)","Centro de custo","Mensalidade","IOF (rateado)","Coparticipação do mês","Total rateado"];
+  const widths = [28,12,30,24,40,13,13,18,14];
+  const FIRST_COL = 2, lastCol = FIRST_COL + cols.length - 1;
+  const CC_COL = FIRST_COL + 4;
+
+  const totalMens = linhas.reduce((s,l)=>s+l.mensalidade,0);
+  const totalIof = linhas.reduce((s,l)=>s+l.iof,0);
+  const totalCopart = linhas.reduce((s,l)=>s+l.coparticipacaoMes,0);
+  const totalGeral = totalMens + totalIof + totalCopart;
+  const naoMapeados = linhas.filter(l=>!l.centroCusto).length;
+  // Confere o total rateado contra o(s) boleto(s) reais dos arquivos presentes — mesma checagem
+  // "Diferença" que a planilha de conferência da Rio Ave já faz, agora automática. Nota: se o filtro
+  // de empresa estiver ativo e a empresa filtrada compartilhar um boleto com outras subfaturas do
+  // mesmo arquivo (caso dos boletos consolidados), o boleto mostrado é o do arquivo inteiro, não só
+  // da empresa filtrada — por isso a diferença só é 0 exato sem filtro, ou filtrando por uma empresa
+  // cujo arquivo cobre só ela.
+  const arquivosNoRateio = [...new Set(linhas.map(l=>l.beneficiario.origemArquivo))];
+  const totalBoletos = arquivosNoRateio.reduce((s,arq)=> s + ((fatura.boletoPorArquivo||{})[arq]||0), 0);
+  const temBoletos = arquivosNoRateio.some(arq=>(fatura.boletoPorArquivo||{})[arq]!=null);
+  const diferenca = temBoletos ? (totalGeral - totalBoletos) : null;
+  const headerRow = buildExportHeader(ws, `PLANO DE ${label.toUpperCase()} — TODOS OS BENEFICIÁRIOS`,
+    `Competência: ${fmtCompetencia(sel)}${filtro?` · Empresa: ${filtro}`:""} · Gerado em ${periodoLabel()}`,
+    `Beneficiários: ${linhas.length}  |  Mensalidade: ${fmtBRL(totalMens)}  |  IOF: ${fmtBRL(totalIof)}  |  Coparticipação: ${fmtBRL(totalCopart)}  |  Total: ${fmtBRL(totalGeral)}` +
+    (temBoletos ? `  |  Boleto(s): ${fmtBRL(totalBoletos)}  |  Diferença: ${fmtBRL(diferenca)}` : "") +
+    (naoMapeados?`  |  ${naoMapeados} sem centro de custo mapeado`:""),
+    lastCol);
+
+  ws.getColumn(1).width = 1.8;
+  cols.forEach((c,i)=> ws.getColumn(FIRST_COL+i).width = widths[i]);
+  cols.forEach((c,i)=> ws.getCell(headerRow, FIRST_COL+i).value = c);
+  styleExportHeaderRow(ws, headerRow, FIRST_COL, lastCol);
+
+  let r = headerRow;
+  linhas.forEach((l,idx)=>{
+    r++;
+    const vals = [
+      titleCase(l.beneficiario.nome),
+      l.beneficiario.parentesco ? depLabel(l.beneficiario.parentesco) : "Titular",
+      l.beneficiario.empresa || "—",
+      (l.ativo && l.ativo.departamento) ? titleCase(l.ativo.departamento) : "—",
+      l.centroCusto || "NÃO MAPEADO",
+      l.mensalidade, l.iof, l.coparticipacaoMes, l.total,
+    ];
+    vals.forEach((v,i)=> ws.getCell(r, FIRST_COL+i).value = v);
+    [5,6,7,8].forEach(i=> ws.getCell(r, FIRST_COL+i).numFmt = '#,##0.00');
+    styleExportDataRow(ws, r, FIRST_COL, lastCol, idx%2===1);
+    if(!l.centroCusto){
+      ws.getCell(r, CC_COL).font = {name:EXPORT_FONT, size:10, italic:true, color:{argb:"FFB2544B"}};
+      if(centrosDisponiveis.length){
+        ws.getCell(r, CC_COL).dataValidation = {
+          type: "list", allowBlank: true,
+          formulae: [`'Centros de Custo'!$A$1:$A$${centrosDisponiveis.length}`],
+          showErrorMessage: true, errorStyle: "warning",
+          error: "Escolha um centro de custo da lista.", errorTitle: "Centro de custo",
+          showInputMessage: true,
+          prompt: "Escolha o centro de custo pra rateio manual deste beneficiário.", promptTitle: "Sem mapeamento automático",
+        };
+      }
+    }
+  });
+  r++;
+  const totVals = ["","","","","TOTAL", totalMens, totalIof, totalCopart, totalGeral];
+  totVals.forEach((v,i)=> ws.getCell(r, FIRST_COL+i).value = v);
+  [5,6,7,8].forEach(i=> ws.getCell(r, FIRST_COL+i).numFmt = '#,##0.00');
+  styleExportTotalsRow(ws, r, FIRST_COL, lastCol);
+  if(temBoletos){
+    r++;
+    ws.getCell(r, FIRST_COL+4).value = "Boleto(s) da fatura";
+    ws.getCell(r, FIRST_COL+8).value = totalBoletos;
+    ws.getCell(r, FIRST_COL+8).numFmt = '#,##0.00';
+    r++;
+    ws.getCell(r, FIRST_COL+4).value = "Diferença";
+    ws.getCell(r, FIRST_COL+8).value = diferenca;
+    ws.getCell(r, FIRST_COL+8).numFmt = '#,##0.00';
+    [r-1,r].forEach(rr=>{
+      ws.getCell(rr, FIRST_COL+4).font = {name:EXPORT_FONT, size:9.5, color:{argb:EXPORT_SUBTITLE_TEXT}};
+      ws.getCell(rr, FIRST_COL+8).font = {name:EXPORT_FONT, size:9.5, bold:true, color:{argb:EXPORT_SUBTITLE_TEXT}};
+    });
+  }
+
+  return ws;
+}
+async function exportarBeneficiariosExcel(modulo){
+  const comps = competenciasDisponiveis(modulo);
+  const sel = state["_sel_"+modulo] || comps[comps.length-1];
+  const filtro = state["_filtroEmpresa_"+modulo] || "";
+
+  // Lista de todos os centros de custo conhecidos (mapa importado + os fixos das SPEs bundladas),
+  // usada pra montar uma lista suspensa nas células "NÃO MAPEADO" — facilita o rateio manual desses
+  // casos (normalmente gente sem cadastro de ativo, ex. já desligada) direto na planilha exportada,
+  // sem precisar digitar o texto do centro de custo à mão. Compartilhada entre as duas abas.
+  const centrosDisponiveis = [...new Set([
+    ...Object.values(state.centroCustoMapa||{}),
+    ...Object.values(CENTRO_CUSTO_FIXO_POR_EMPRESA_FATURA),
+  ])].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+
+  const wb = new ExcelJS.Workbook();
+  if(centrosDisponiveis.length){
+    const wsAux = wb.addWorksheet("Centros de Custo");
+    centrosDisponiveis.forEach((cc,i)=> wsAux.getCell(i+1,1).value = cc);
+    wsAux.state = "veryHidden";
+  }
+
+  const wsAtual = montarSheetBeneficiarios(wb, modulo, sel, "Beneficiários", centrosDisponiveis);
+  if(!wsAtual){ toast("Importe a fatura real (PDF) deste mês antes de exportar.", true); return; }
+
+  // Aba da competência anterior junto, pra manter o histórico completo ao longo dos meses — pedido
+  // do usuário ("quero que na planilha extraída venha a da última competência em aba separada").
+  const idxSel = comps.indexOf(sel);
+  const compAnterior = idxSel > 0 ? comps[idxSel-1] : null;
+  if(compAnterior) montarSheetBeneficiarios(wb, modulo, compAnterior, `Beneficiários ${mesLabelCurto(compAnterior).replace("/","-")}`, centrosDisponiveis);
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  await saveFile(`beneficiarios_${modulo}_${sel}${filtro?"_"+normName(filtro).replace(/\s+/g,"_"):""}.xlsx`, blob);
+}
+function titleCase(s){
+  return (s||"").toLowerCase().replace(/(^|\s)([a-zà-ú])/g, (m,sp,c)=>sp+c.toUpperCase());
+}
+function fmtCompetencia(c){
+  const [y,m] = c.split("-");
+  const meses=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  return `${meses[parseInt(m,10)-1]}/${y}`;
+}
+
+/* ============================================================
+   MODAL — HISTÓRICO
+============================================================ */
+function openHistorico(modulo, nomeNorm, nome){
+  const hist = historicoBeneficiario(modulo, nomeNorm);
+  const max = Math.max(1, ...hist.map(h=>h.total));
+  document.getElementById("modalRoot").innerHTML = `
+  <div class="modal-bg" id="mbg">
+    <div class="modal">
+      <span class="modal-close" id="mclose">&times;</span>
+      <h3>Histórico de coparticipação</h3>
+      <p class="mhint">${titleCase(nome)}</p>
+      <div class="hist-bars">
+        ${hist.map(h=>`<div class="hb"><div class="bar" style="height:${Math.max(4, h.total/max*80)}px" title="${fmtBRL(h.total)}"></div><div class="hblabel">${mesLabel(h.competencia)}</div></div>`).join("")}
+      </div>
+      <div class="twrap"><table><thead><tr><th>Mês</th><th class="num">Valor</th></tr></thead><tbody>
+        ${hist.slice().reverse().map(h=>`<tr><td>${fmtCompetencia(h.competencia)}</td><td class="num tabular">${fmtBRL(h.total)}</td></tr>`).join("")}
+      </tbody></table></div>
+    </div>
+  </div>`;
+  document.getElementById("mbg").onclick = e=>{ if(e.target.id==="mbg") closeModal(); };
+  document.getElementById("mclose").onclick = closeModal;
+}
+function closeModal(){ document.getElementById("modalRoot").innerHTML = ""; }
+
+/* ============================================================
+   RENDER PRINCIPAL + BINDINGS
+============================================================ */
+function render(){
+  renderNav();
+  const view = document.getElementById("view");
+  if(activeView==="ativos") view.innerHTML = renderAtivos();
+  else view.innerHTML = renderModulo(activeView);
+  bindView();
+}
+
+function bindView(){
+  const fa = document.getElementById("fileAtivos");
+  if(fa) fa.onchange = async (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    e.target.value = "";
+    try{
+      const ativos = await parseAtivosFile(file);
+      openAtivosCompetenciaModal(file, ativos);
+    }catch(err){ toast(err.message, true); }
+  };
+  document.querySelectorAll("[data-ativos-comp]").forEach(btn=>{
+    btn.onclick = ()=>{ state["_selAtivosComp"] = btn.dataset.ativosComp; render(); };
+  });
+  const fh = document.getElementById("fileHistorico");
+  if(fh) fh.onchange = async (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    try{
+      const r = await importarHistoricoCoparticipacao(file);
+      toast(`${r.mesesImportados} mês(es) importado(s) da planilha (${r.linhasImportadas} linhas)${r.parcelasAplicadas?`, ${r.parcelasAplicadas} parcela(s) aplicada(s) em meses com fatura real`:""}.`);
+      render();
+    }catch(err){ toast(err.message, true); }
+  };
+  const fs = document.getElementById("fileSubfaturas");
+  if(fs) fs.onchange = async (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    try{
+      const n = await importarSubfaturas(file);
+      toast(`${n} empresas mapeadas para suas subfaturas.`);
+      render();
+    }catch(err){ toast(err.message, true); }
+  };
+  const fcc = document.getElementById("fileCentroCusto");
+  if(fcc) fcc.onchange = async (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    try{
+      const n = await importarCentroCustos(file);
+      toast(`Mapa de centro de custo importado: ${n} combinações empresa+departamento.`);
+      render();
+    }catch(err){ toast(err.message, true); }
+  };
+  const btnExport = document.getElementById("btnExportBenef");
+  if(btnExport) btnExport.onclick = async ()=>{
+    try{ await exportarBeneficiariosExcel(activeView); }
+    catch(err){ toast(err.message, true); }
+  };
+  ["saude","odonto"].forEach(modulo=>{
+    const inp = document.getElementById("fileFatura_"+modulo);
+    if(inp) inp.onchange = async (e)=>{
+      const files = [...e.target.files];
+      inp.value = "";
+      if(!files.length) return;
+      if(files.length === 1){
+        try{
+          const parsed = await parseFaturaFile(files[0]);
+          openCompetenciaModal(modulo, files[0], parsed);
+        }catch(err){ toast(err.message, true); }
+        return;
+      }
+      // vários arquivos de uma vez: detecta o mês de cada um sozinho, sem perguntar um por um
+      let ok = 0;
+      const falhas = [];
+      for(const file of files){
+        try{
+          const parsed = await parseFaturaFile(file);
+          if(!parsed.competenciaDetectada){ falhas.push(`${file.name}: não consegui detectar o mês automaticamente.`); continue; }
+          const r = salvarFatura(modulo, parsed.competenciaDetectada, file, parsed);
+          state["_sel_"+modulo] = parsed.competenciaDetectada;
+          ok++;
+        }catch(err){ falhas.push(err.message); }
+      }
+      if(ok) toast(`${ok} fatura(s) importada(s) automaticamente.`);
+      falhas.forEach(f=>toast(f, true));
+      render();
+    };
+  });
+  document.querySelectorAll("[data-comp]").forEach(btn=>{
+    btn.onclick = ()=>{
+      state["_sel_"+btn.dataset.modulo] = btn.dataset.comp;
+      render();
+    };
+  });
+  ["saude","odonto"].forEach(modulo=>{
+    const filtroSel = document.getElementById("filtroEmpresa_"+modulo);
+    if(filtroSel) filtroSel.onchange = e=>{ state["_filtroEmpresa_"+modulo] = e.target.value; render(); };
+  });
+  document.querySelectorAll("[data-hist]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const nomeNorm = decodeURIComponent(btn.dataset.hist);
+      const comps = competenciasDisponiveis(activeView);
+      const sel = state["_sel_"+activeView] || comps[comps.length-1];
+      const linha = coparticipacaoDoMes(activeView, sel).find(l=>l.nomeNorm===nomeNorm);
+      openHistorico(activeView, nomeNorm, linha ? linha.beneficiario.nome : nomeNorm);
+    };
+  });
+  document.querySelectorAll(".input-parcelas").forEach(inp=>{
+    inp.onchange = ()=>{
+      const nomeNorm = decodeURIComponent(inp.dataset.parcelasNome);
+      const comp = inp.dataset.parcelasComp;
+      const modulo = inp.dataset.parcelasModulo;
+      let n = parseInt(inp.value, 10);
+      if(!n || n<1) n = 1;
+      definirParcelas(modulo, comp, nomeNorm, n);
+      render();
+    };
+  });
+  document.querySelectorAll("[data-resolve]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const status = btn.dataset.resolve;
+      const nomeNorm = decodeURIComponent(btn.dataset.nome);
+      const ativoNome = btn.dataset.ativo ? decodeURIComponent(btn.dataset.ativo) : null;
+      resolverNome(nomeNorm, status, ativoNome);
+      const msgs = {mesmo:"Marcado como o mesmo funcionário.", naoClt:"Marcado como não-CLT — não vai mais aparecer como desligado.", diferente:"Marcado como desligado."};
+      toast(msgs[status] || "Salvo.");
+      render();
+    };
+  });
+  document.querySelectorAll("[data-undo-resolve]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const nomeNorm = decodeURIComponent(btn.dataset.undoResolve);
+      delete state.nomeResolucoes[nomeNorm];
+      persistResolucoes();
+      toast("Decisão desfeita — volta a aparecer para confirmação se ainda houver divergência.");
+      render();
+    };
+  });
+  document.querySelectorAll("[data-empresa-ciente]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const nomeNorm = decodeURIComponent(btn.dataset.empresaCiente);
+      marcarDivergenciaEmpresaCiente(nomeNorm);
+      toast("Marcado como ciente — não alerta mais essa divergência de empresa.");
+      render();
+    };
+  });
+  document.querySelectorAll("[data-undo-empresa]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const nomeNorm = decodeURIComponent(btn.dataset.undoEmpresa);
+      delete state.empresaIgnoradas[nomeNorm];
+      persistResolucoes();
+      toast("Decisão desfeita — a divergência de empresa volta a ser alertada.");
+      render();
+    };
+  });
+}
+
+function openCompetenciaModal(modulo, file, parsed){
+  const now = new Date();
+  const def = parsed.competenciaDetectada || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  document.getElementById("modalRoot").innerHTML = `
+  <div class="modal-bg" id="mbg">
+    <div class="modal" style="max-width:420px">
+      <span class="modal-close" id="mclose">&times;</span>
+      <h3>Competência da fatura</h3>
+      <p class="mhint">${file.name}${parsed.competenciaDetectada ? " — mês detectado automaticamente, confira antes de importar" : ""}</p>
+      <div style="margin:16px 0 20px">
+        <label style="display:block;font-size:11.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Mês/ano desta fatura</label>
+        <input type="month" id="compInput" value="${def}" style="width:100%">
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn ghost" id="compCancel">Cancelar</button>
+        <button class="btn primary" id="compConfirm">Importar fatura</button>
+      </div>
+    </div>
+  </div>`;
+  const close = ()=> closeModal();
+  document.getElementById("mbg").onclick = e=>{ if(e.target.id==="mbg") close(); };
+  document.getElementById("mclose").onclick = close;
+  document.getElementById("compCancel").onclick = close;
+  document.getElementById("compConfirm").onclick = ()=>{
+    const comp = document.getElementById("compInput").value;
+    if(!/^\d{4}-\d{2}$/.test(comp||"")){ toast("Escolha um mês/ano válido.", true); return; }
+    const btn = document.getElementById("compConfirm");
+    btn.textContent = "Importando..."; btn.disabled = true;
+    try{
+      const r = salvarFatura(modulo, comp, file, parsed);
+      state["_sel_"+modulo] = comp;
+      close();
+      toast(`Fatura importada: ${r.beneficiarios} beneficiários, ${r.eventos} eventos.`);
+      render();
+    }catch(err){
+      btn.textContent = "Importar fatura"; btn.disabled = false;
+      toast(err.message, true);
+    }
+  };
+}
+function openAtivosCompetenciaModal(file, ativos){
+  const now = new Date();
+  const def = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  document.getElementById("modalRoot").innerHTML = `
+  <div class="modal-bg" id="mbg">
+    <div class="modal" style="max-width:420px">
+      <span class="modal-close" id="mclose">&times;</span>
+      <h3>Competência deste cadastro de ativos</h3>
+      <p class="mhint">${file.name} — ${ativos.length} funcionário(s). Qual mês esse cadastro representa? As faturas desse mês em diante vão usar esse cadastro até você importar um mais novo.</p>
+      <div style="margin:16px 0 20px">
+        <label style="display:block;font-size:11.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Mês/ano deste cadastro</label>
+        <input type="month" id="ativosCompInput" value="${def}" style="width:100%">
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn ghost" id="ativosCompCancel">Cancelar</button>
+        <button class="btn primary" id="ativosCompConfirm">Importar cadastro</button>
+      </div>
+    </div>
+  </div>`;
+  const close = ()=> closeModal();
+  document.getElementById("mbg").onclick = e=>{ if(e.target.id==="mbg") close(); };
+  document.getElementById("mclose").onclick = close;
+  document.getElementById("ativosCompCancel").onclick = close;
+  document.getElementById("ativosCompConfirm").onclick = ()=>{
+    const comp = document.getElementById("ativosCompInput").value;
+    if(!/^\d{4}-\d{2}$/.test(comp||"")){ toast("Escolha um mês/ano válido.", true); return; }
+    const n = salvarAtivos(comp, file, ativos);
+    state["_selAtivosComp"] = comp;
+    close();
+    toast(`${n} funcionários ativos importados para ${fmtCompetencia(comp)}.`);
+    render();
+  };
+}
+
+/* ============================================================
+   BANCO DE DADOS COMPARTILHADO (Firestore)
+   Mesmo padrão do Apontamento Diário: tenta primeiro o banco do
+   claude.ai (só relevante se este artefato for aberto lá — como
+   a capability "db" não é declarada neste artefato, isso sempre
+   cai pro Firebase, inclusive na própria cópia do claude.ai, pra
+   nunca bifurcar dados entre as duas hospedagens), senão conecta
+   direto no Firebase (funciona tanto ali quanto na cópia hospedada
+   no GitHub Pages), e só cai pro localStorage puro se nenhum dos
+   dois estiver disponível (dados ficam só neste navegador nesse
+   caso, com aviso na tela).
+   Projeto Firebase dedicado ("plano-saude-rioave"), regras abertas
+   (allow read, write: if true) — mesmo nível "freio casual" da
+   senha de entrada, não é segurança real; decisão consciente do
+   usuário (ver memória do projeto), replicando o Apontamento Diário.
+============================================================ */
+var FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCPbP7uLoSs7QCOJO05Xd8H7jTKN7bBQkk",
+  authDomain: "plano-saude-rioave.firebaseapp.com",
+  projectId: "plano-saude-rioave",
+  storageBucket: "plano-saude-rioave.firebasestorage.app",
+  messagingSenderId: "409982151743",
+  appId: "1:409982151743:web:bddf4f43ec780f56561c8a"
+};
+function makeFirebaseDb(){
+  if(typeof firebase === "undefined" || !firebase.apps) return null;
+  var app = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(FIREBASE_CONFIG);
+  var fs = firebase.firestore(app);
+  function wrapDoc(d){ return {id:d.id, exists:d.exists, data:function(){ return d.data(); }}; }
+  function wrapSnapshot(snap){ return {docs: snap.docs.map(wrapDoc), size:snap.size, empty:snap.empty}; }
+  return {
+    collection: function(path){
+      var ref = fs.collection(path);
+      return {
+        onSnapshot: function(next, err){ return ref.onSnapshot(function(snap){ next(wrapSnapshot(snap)); }, err); },
+        doc: function(id){
+          var dref = ref.doc(id);
+          return {
+            id:id,
+            get: function(){ return dref.get().then(wrapDoc); },
+            set: function(data){ return dref.set(data); },
+            update: function(data){ return dref.update(data); },
+            delete: function(){ return dref.delete(); }
+          };
+        }
+      };
+    }
+  };
+}
+function makeLocalStorageDb(){
+  var PREFIX = "planoSaudeRioAve-db:";
+  var listeners = {};
+  function readCollection(path){
+    try{ var raw = localStorage.getItem(PREFIX+path); return raw ? JSON.parse(raw) : {}; }
+    catch(e){ return {}; }
+  }
+  function writeCollection(path, docsObj){
+    try{ localStorage.setItem(PREFIX+path, JSON.stringify(docsObj)); }catch(e){}
+  }
+  function notify(path){
+    var docsObj = readCollection(path);
+    var snap = {
+      docs: Object.keys(docsObj).map(function(id){ return {id:id, exists:true, data:function(){ return docsObj[id]; }}; }),
+      size: Object.keys(docsObj).length, empty: Object.keys(docsObj).length===0
+    };
+    (listeners[path]||[]).slice().forEach(function(cb){ cb(snap); });
+  }
+  return {
+    collection: function(path){
+      return {
+        onSnapshot: function(next){
+          listeners[path] = listeners[path]||[];
+          listeners[path].push(next);
+          notify(path);
+          return function(){ listeners[path] = (listeners[path]||[]).filter(function(cb){ return cb!==next; }); };
+        },
+        doc: function(id){
+          return {
+            id:id,
+            get: function(){
+              var docsObj = readCollection(path);
+              var exists = Object.prototype.hasOwnProperty.call(docsObj, id);
+              return Promise.resolve({id:id, exists:exists, data:function(){ return docsObj[id]; }});
+            },
+            set: function(data){
+              var docsObj = readCollection(path);
+              docsObj[id] = JSON.parse(JSON.stringify(data));
+              writeCollection(path, docsObj); notify(path);
+              return Promise.resolve();
+            },
+            update: function(data){
+              var docsObj = readCollection(path);
+              docsObj[id] = Object.assign({}, docsObj[id]||{}, JSON.parse(JSON.stringify(data)));
+              writeCollection(path, docsObj); notify(path);
+              return Promise.resolve();
+            },
+            delete: function(){
+              var docsObj = readCollection(path);
+              delete docsObj[id];
+              writeCollection(path, docsObj); notify(path);
+              return Promise.resolve();
+            }
+          };
+        }
+      };
+    }
+  };
+}
+function showDbBanner(msg){
+  const el = document.getElementById("dbBanner");
+  if(el){ el.hidden = false; el.textContent = msg; }
+}
+function connectDb(){
+  return new Promise(function(resolve){
+    function fallbackParaFirebaseOuLocal(){
+      var fbDb = null;
+      try{ fbDb = makeFirebaseDb(); }catch(e){ fbDb = null; }
+      if(fbDb){
+        state.db = fbDb;
+      } else {
+        state.db = makeLocalStorageDb();
+        showDbBanner("Não consegui conectar ao banco compartilhado — os dados ficam só neste navegador, não são vistos por outras pessoas.");
+      }
+      resolve(state.db);
+    }
+    if(window.claude && window.claude.use){
+      window.claude.use("db").then(function(db){
+        if(!db) fallbackParaFirebaseOuLocal();
+        else { state.db = db; resolve(state.db); }
+      });
+    } else {
+      fallbackParaFirebaseOuLocal();
+    }
+  });
+}
+let autenticado = false;
+function renderSeAutenticado(){ if(autenticado) render(); }
+function subscribeDb(db){
+  db.collection("ativosSnapshots").onSnapshot(function(snap){
+    const out = {};
+    snap.docs.forEach(d=>{ out[d.id] = d.data(); });
+    state.ativosPorCompetencia = out;
+    renderSeAutenticado();
+  });
+  db.collection("faturas").onSnapshot(function(snap){
+    const saude = {}, odonto = {};
+    snap.docs.forEach(d=>{
+      const data = d.data();
+      const modulo = d.id.indexOf("odonto_")===0 ? "odonto" : "saude";
+      (modulo==="odonto" ? odonto : saude)[data.competencia] = data;
+    });
+    state.modulos.saude.faturas = saude;
+    state.modulos.odonto.faturas = odonto;
+    renderSeAutenticado();
+  });
+  db.collection("config").onSnapshot(function(snap){
+    snap.docs.forEach(d=>{
+      const data = d.data();
+      if(d.id==="resolucoes"){
+        state.nomeResolucoes = data.nomeResolucoes||{};
+        state.empresaIgnoradas = data.empresaIgnoradas||{};
+      } else if(d.id==="subfaturas"){
+        state.subfaturasPorCodigo = data.subfaturasPorCodigo||{};
+        state.subfaturasArquivo = data.subfaturasArquivo||null;
+        state.subfaturasImportadoEm = data.subfaturasImportadoEm||null;
+      } else if(d.id==="centroCusto"){
+        state.centroCustoMapa = data.centroCustoMapa||{};
+        state.centroCustoArquivo = data.centroCustoArquivo||null;
+        state.centroCustoImportadoEm = data.centroCustoImportadoEm||null;
+      }
+    });
+    renderSeAutenticado();
+  });
+}
+
+/* ---- gravação: cada função de mutação persiste só o documento que mudou,
+   no lugar do antigo saveState() único (que serializava o state inteiro) ---- */
+function persistAtivos(competencia){
+  if(!state.db) return;
+  state.db.collection("ativosSnapshots").doc(competencia).set(state.ativosPorCompetencia[competencia])
+    .catch(()=> toast("Não consegui salvar no banco compartilhado — tente de novo.", true));
+}
+function persistFatura(modulo, competencia){
+  if(!state.db) return;
+  state.db.collection("faturas").doc(`${modulo}_${competencia}`).set(state.modulos[modulo].faturas[competencia])
+    .catch(()=> toast("Não consegui salvar no banco compartilhado — tente de novo.", true));
+}
+function persistResolucoes(){
+  if(!state.db) return;
+  state.db.collection("config").doc("resolucoes").set({nomeResolucoes: state.nomeResolucoes, empresaIgnoradas: state.empresaIgnoradas})
+    .catch(()=> toast("Não consegui salvar no banco compartilhado — tente de novo.", true));
+}
+function persistSubfaturas(){
+  if(!state.db) return;
+  state.db.collection("config").doc("subfaturas").set({subfaturasPorCodigo: state.subfaturasPorCodigo, subfaturasArquivo: state.subfaturasArquivo, subfaturasImportadoEm: state.subfaturasImportadoEm})
+    .catch(()=> toast("Não consegui salvar no banco compartilhado — tente de novo.", true));
+}
+function persistCentroCusto(){
+  if(!state.db) return;
+  state.db.collection("config").doc("centroCusto").set({centroCustoMapa: state.centroCustoMapa, centroCustoArquivo: state.centroCustoArquivo, centroCustoImportadoEm: state.centroCustoImportadoEm})
+    .catch(()=> toast("Não consegui salvar no banco compartilhado — tente de novo.", true));
+}
+
+/* ---- migração única: se este navegador tem dados do formato antigo
+   (localStorage de antes do banco compartilhado) e o banco ainda está
+   vazio, sobe esses dados pro Firestore uma vez só. Nunca sobrescreve
+   se o banco já tiver algo (outra pessoa/aba já usou/migrou primeiro). ---- */
+function probeCollectionOnce(db, path){
+  return new Promise(resolve=>{
+    const unsub = db.collection(path).onSnapshot(snap=>{ unsub(); resolve(snap); });
+  });
+}
+async function migrarDadosLocaisSeNecessario(db){
+  if(localStorage.getItem("planoSaudeRioAve:migrado")) return;
+  const legado = loadLegacyLocalState();
+  if(!legado){ localStorage.setItem("planoSaudeRioAve:migrado", "1"); return; }
+  try{
+    const [probeAtivos, probeFaturas] = await Promise.all([
+      probeCollectionOnce(db, "ativosSnapshots"),
+      probeCollectionOnce(db, "faturas"),
+    ]);
+    if(!probeAtivos.empty || !probeFaturas.empty){
+      localStorage.setItem("planoSaudeRioAve:migrado", "1");
+      return;
+    }
+    let ativosPorCompetencia = legado.ativosPorCompetencia || {};
+    if(!Object.keys(ativosPorCompetencia).length && legado.ativos && legado.ativos.length){
+      const hoje = new Date();
+      const comp = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}`;
+      ativosPorCompetencia = {[comp]: {ativos: legado.ativos, arquivo: legado.ativosArquivo||null, importadoEm: legado.ativosImportadoEm||new Date().toISOString()}};
+    }
+    const writes = [];
+    for(const [comp, dados] of Object.entries(ativosPorCompetencia)){
+      writes.push(db.collection("ativosSnapshots").doc(comp).set(dados));
+    }
+    const modulos = legado.modulos || {saude:{faturas:{}}, odonto:{faturas:{}}};
+    for(const modulo of ["saude","odonto"]){
+      for(const [comp, fatura] of Object.entries((modulos[modulo]||{}).faturas || {})){
+        writes.push(db.collection("faturas").doc(`${modulo}_${comp}`).set(fatura));
+      }
+    }
+    if(legado.nomeResolucoes || legado.empresaIgnoradas){
+      writes.push(db.collection("config").doc("resolucoes").set({nomeResolucoes: legado.nomeResolucoes||{}, empresaIgnoradas: legado.empresaIgnoradas||{}}));
+    }
+    if(legado.subfaturasPorCodigo){
+      writes.push(db.collection("config").doc("subfaturas").set({subfaturasPorCodigo: legado.subfaturasPorCodigo, subfaturasArquivo: legado.subfaturasArquivo||null, subfaturasImportadoEm: legado.subfaturasImportadoEm||null}));
+    }
+    if(legado.centroCustoMapa){
+      writes.push(db.collection("config").doc("centroCusto").set({centroCustoMapa: legado.centroCustoMapa, centroCustoArquivo: legado.centroCustoArquivo||null, centroCustoImportadoEm: legado.centroCustoImportadoEm||null}));
+    }
+    await Promise.all(writes);
+    localStorage.setItem("planoSaudeRioAve:migrado", "1");
+  }catch(e){
+    // não marca como migrado se falhar — tenta de novo na próxima carga
+  }
+}
+
+/* ============================================================
+   ACESSO — senha simples (não é segurança real: qualquer pessoa com
+   acesso ao devtools do navegador consegue contornar isso; é só um
+   filtro casual, dado o dado sensível que essa ferramenta guarda).
+   Pedido do usuário: sempre pedir a senha (sem "lembrar" entre
+   sessões), hash SHA-256 em vez de senha em texto puro no código-fonte.
+============================================================ */
+const SENHA_HASH = "952dc2d36c52ec57a021941595ad98dc7bdceae62d92e9850aad8e926b7daaf3";
+async function sha256Hex(texto){
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texto));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function tentarAcesso(){
+  const input = document.getElementById("authInput");
+  const hash = await sha256Hex(input.value);
+  if(hash === SENHA_HASH){
+    document.getElementById("authGate").remove();
+    document.getElementById("appShell").style.display = "";
+    autenticado = true;
+    render();
+  } else {
+    document.getElementById("authError").style.display = "block";
+    input.value = "";
+    input.focus();
+  }
+}
+document.getElementById("authSubmit").onclick = tentarAcesso;
+document.getElementById("authInput").addEventListener("keydown", e=>{ if(e.key==="Enter") tentarAcesso(); });
+document.getElementById("authInput").focus();
+
+// Conecta ao banco assim que o script carrega, em paralelo com a tela de senha (a senha aqui é
+// única/fixa, não depende de nada do banco pra ser conferida) — precisa ficar no fim do script,
+// depois de FIREBASE_CONFIG já ter sido atribuído (ver nota no Apontamento Diário sobre chamar
+// isso cedo demais e o Firebase falhar com "Need to provide options").
+state.dbReady = connectDb();
+state.dbReady.then(function(db){
+  subscribeDb(db);
+  migrarDadosLocaisSeNecessario(db);
+});
+</script>
+</body>
+</html>
