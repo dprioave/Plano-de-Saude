@@ -245,6 +245,7 @@ tbody tr:nth-child(even){background:rgba(255,255,255,0.015)}
 <body>
 <div class="modal-bg" id="authGate">
   <div class="modal" style="max-width:380px">
+    <div style="text-align:center;margin-bottom:14px"><img src="logo-rioave.png" alt="Rio Ave" style="height:40px;width:auto"></div>
     <h3>Plano de Saúde — acesso restrito</h3>
     <p class="mhint">Este painel tem dados sensíveis de plano de saúde. Digite a senha para continuar.</p>
     <div style="margin:16px 0 6px">
@@ -2612,7 +2613,7 @@ async function migrarDadosLocaisSeNecessario(db){
    Pedido do usuário: sempre pedir a senha (sem "lembrar" entre
    sessões), hash SHA-256 em vez de senha em texto puro no código-fonte.
 ============================================================ */
-const SENHA_HASH = "952dc2d36c52ec57a021941595ad98dc7bdceae62d92e9850aad8e926b7daaf3";
+const SENHA_HASH = "fc1c6bc3257d3eced09bde5546ea973bbdbb0a25b6253269d0896cbcc7c6ee4d";
 async function sha256Hex(texto){
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texto));
   return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
