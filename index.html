@@ -1146,6 +1146,15 @@ function coparticipacaoPorBeneficiario(fatura){
 // ativo correspondente. Comparação por nome da EMPRESA DA FATURA (subfatura), não do cadastro de
 // ativos — essas empresas podem nem ter funcionário nenhum no cadastro Alterdata.
 const CENTRO_CUSTO_REEMBOLSOS_SUBHOLDING = "10043 - Subholding Incorporação - Plano de Saúde e Alimentação - Reembolsos";
+// Centros de custo que precisam existir na lista suspensa do rateio mesmo sem aparecer na
+// planilha "Centro de Custo - Plano de Saúde" (pedido do DP) — ficam aqui, e não no mapa importado,
+// porque reimportar a planilha troca o mapa inteiro e esses sumiriam.
+const CENTROS_CUSTO_EXTRAS = [
+  "10034 - Subholding Incorporação - Projeto Bellagio",
+  "12109 - Rio Ave Oásis Torre 1 - Obra",
+  "12108 - Rio Ave Oásis Torre 1 - Operações do Showroom",
+  "70106 - Rio Ave Investimentos - Plano de Saúde e Alimentação - Reembolsos",
+];
 const CENTRO_CUSTO_FIXO_POR_EMPRESA_FATURA = {
   "FCS ENGENHARIA LTDA": CENTRO_CUSTO_REEMBOLSOS_SUBHOLDING,
   "MSB CONSULTORIA IMOBILIARIA LTDA": CENTRO_CUSTO_REEMBOLSOS_SUBHOLDING,
@@ -2059,6 +2068,7 @@ async function exportarBeneficiariosExcel(modulo){
   const centrosDisponiveis = [...new Set([
     ...Object.values(state.centroCustoMapa||{}),
     ...Object.values(CENTRO_CUSTO_FIXO_POR_EMPRESA_FATURA),
+    ...CENTROS_CUSTO_EXTRAS,
   ])].sort((a,b)=>a.localeCompare(b,"pt-BR"));
 
   const wb = new ExcelJS.Workbook();
